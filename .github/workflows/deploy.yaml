@@ -1,4 +1,4 @@
-name: Deploy WASM Components
+name: Deploy WADM to wasmcloud
 
 on:
   workflow_dispatch:
@@ -51,14 +51,7 @@ jobs:
       - name: Get version from build run
         id: get_version
         run: |
-          # Fetch the workflow run and extract the version output
-          VERSION=$(gh run view ${{ steps.get_run_id.outputs.run_id }} --json jobs --jq '.jobs[] | select(.name == "build") | .steps[] | select(.name == "Read version") | .conclusion' )
-
-          # Get artifact name to extract version
-          ARTIFACT_NAME=$(gh run view ${{ steps.get_run_id.outputs.run_id }} --json artifacts --jq '.artifacts[0].name')
-
-          # Extract version from artifact name (format: wasm-components-vX.Y.Z)
-          VERSION=$(echo $ARTIFACT_NAME | sed 's/wasm-components-v//')
+          VERSION=$(gh run view ${{ steps.get_run_id.outputs.run_id }} --log | grep "Run semantic-release" | grep "Published release" | sed -E 's/.*Published release ([^ ]+).*/\1/')
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"

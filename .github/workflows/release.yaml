@@ -7,6 +7,9 @@ on:
 
 jobs:
   build-and-release:
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      has_release: ${{ steps.version.outputs.has_release }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
