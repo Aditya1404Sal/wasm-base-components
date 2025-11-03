@@ -23,14 +23,12 @@ async function getKeyvaultSecrets(accountId, keyvault) {
 
 function formatSecrets(secrets) {
   let services = Object.entries(secrets).map(([zone, secret]) => {
-    return {
-      [zone]: { secret },
-    };
+    return [zone, { secret }];
   });
 
   return {
     issuer: ISSUER,
-    services,
+    services: Object.fromEntries(services),
   }
 }
 

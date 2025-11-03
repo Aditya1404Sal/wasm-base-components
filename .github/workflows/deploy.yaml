@@ -51,7 +51,7 @@ jobs:
       - name: Get version from build run
         id: get_version
         run: |
-          VERSION=$(gh run view ${{ steps.get_run_id.outputs.run_id }} --log | grep "Run semantic-release" | grep "Published release" | sed -E 's/.*Published release ([^ ]+).*/\1/')
+          VERSION=$(gh run view ${{ steps.get_run_id.outputs.run_id }} --log | grep "\[semantic-release\]" | sed -E 's/.*Published release ([^ ]+).*/\1/')
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
