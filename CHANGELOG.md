@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.0...v1.1.1) (2025-11-03)
+
+
+### Bug Fixes
+
+* get deploy version via the logs ([5c5741e](https://github.com/bettyblocks/wasm-base-components/commit/5c5741e5a73e3dbbec4ff0ccdfafe973c7c433db))
+
 # [1.1.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.0.1...v1.1.0) (2025-11-03)
 
 
