@@ -6,24 +6,25 @@ on:
       - "main"
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
 
     steps:
       - uses: actions/checkout@v4
-      
       - name: Cache Rust registry
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install stable Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        # uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.88.0
         with:
           targets: wasm32-wasip2
 
