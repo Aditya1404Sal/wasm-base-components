@@ -26,296 +26,295 @@ jobs:
       REGISTRY: ${{ github.event_name == 'release' && 'ghcr.io' || inputs.registry }}
       REPO_OWNER: ${{ github.repository_owner }}
 
-    steps: []
-#     steps:
-#       - uses: actions/checkout@v4
-#         with:
-#           fetch-depth: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-#       - name: Determine version
-#         if: github.event_name == 'workflow_dispatch'
-#         run: |
-#           if [ -z "${{ inputs.version }}" ]; then
-#             LATEST_TAG=$(git describe --tags --abbrev=0)
-#             echo "Using latest tag: $LATEST_TAG"
-#             echo "INPUT_VERSION=$LATEST_TAG" >> $GITHUB_ENV
-#           else
-#             echo "Using provided version: ${{ inputs.version }}"
-#             echo "INPUT_VERSION=${{ inputs.version }}" >> $GITHUB_ENV
-#           fi
+      - name: Determine version
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ -z "${{ inputs.version }}" ]; then
+            LATEST_TAG=$(git describe --tags --abbrev=0)
+            echo "Using latest tag: $LATEST_TAG"
+            echo "INPUT_VERSION=$LATEST_TAG" >> $GITHUB_ENV
+          else
+            echo "Using provided version: ${{ inputs.version }}"
+            echo "INPUT_VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+          fi
 
-#       - uses: taiki-e/install-action@v2
-#         with:
-#           tool: wash
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wash
 
-#       - name: Prepare environment
-#         run: |
-#           # Set VERSION based on event type
-#           if [ "${{ github.event_name }}" == "release" ]; then
-#             VERSION="${{ github.event.release.tag_name }}"
-#           else
-#             VERSION="${INPUT_VERSION}"
-#           fi
+      - name: Prepare environment
+        run: |
+          # Set VERSION based on event type
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="${INPUT_VERSION}"
+          fi
           
-#           # Remove 'v' prefix from version if present
-#           VERSION="${VERSION#v}"
-#           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          # Remove 'v' prefix from version if present
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-#           # Convert repository owner to lowercase for ghcr.io
-#           REPO_OWNER=$(echo "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')
-#           echo "REPO_OWNER=$REPO_OWNER" >> $GITHUB_ENV
+          # Convert repository owner to lowercase for ghcr.io
+          REPO_OWNER=$(echo "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')
+          echo "REPO_OWNER=$REPO_OWNER" >> $GITHUB_ENV
 
-#           echo "Publishing version: $VERSION"
-#           echo "Publishing to: $REGISTRY/$REPO_OWNER"
+          echo "Publishing version: $VERSION"
+          echo "Publishing to: $REGISTRY/$REPO_OWNER"
 
-#       - name: Download release assets
-#         if: github.event_name == 'release'
-#         run: |
-#           # Download artifacts from the release
-#           gh release download ${{ github.event.release.tag_name }} --dir ./artifacts
-#         env:
-#           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download release assets
+        if: github.event_name == 'release'
+        run: |
+          # Download artifacts from the release
+          gh release download ${{ github.event.release.tag_name }} --dir ./artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-#       - name: Download artifacts from workflow run
-#         if: github.event_name == 'workflow_dispatch'
-#         uses: dawidd6/action-download-artifact@v3
-#         with:
-#           workflow: release.yaml
-#           name: wasm-components-v${{ env.VERSION }}
-#           path: ./artifacts
-#           if_no_artifact_found: fail
+      - name: Download artifacts from workflow run
+        if: github.event_name == 'workflow_dispatch'
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: release.yaml
+          name: wasm-components-v${{ env.VERSION }}
+          path: ./artifacts
+          if_no_artifact_found: fail
 
-#       - name: Organize artifacts
-#         run: |
-#           # Create build directories if they don't exist
-#           mkdir -p providers/data-api/build
-#           mkdir -p providers/key-vault/build
-#           mkdir -p providers/smtp-provider/build
-#           mkdir -p helper/data-api/component/build
-#           mkdir -p helper/http-wrapper/build
-#           mkdir -p target/wasm32-wasip2/release
+      - name: Organize artifacts
+        run: |
+          # Create build directories if they don't exist
+          mkdir -p providers/data-api/build
+          mkdir -p providers/key-vault/build
+          mkdir -p providers/smtp-provider/build
+          mkdir -p helper/data-api/component/build
+          mkdir -p helper/http-wrapper/build
+          mkdir -p target/wasm32-wasip2/release
 
-#           # Move provider artifacts (.par.gz files)
-#           if [ -f artifacts/data-api*.par.gz ]; then
-#             cp artifacts/data-api*.par.gz providers/data-api/build/data-api.par.gz
-#           fi
-#           if [ -f artifacts/key-vault*.par.gz ]; then
-#             cp artifacts/key-vault*.par.gz providers/key-vault/build/key-vault.par.gz
-#           fi
-#           if [ -f artifacts/smtp-provider*.par.gz ]; then
-#             cp artifacts/smtp-provider*.par.gz providers/smtp-provider/build/smtp-provider.par.gz
-#           fi
+          # Move provider artifacts (.par.gz files)
+          if [ -f artifacts/data-api*.par.gz ]; then
+            cp artifacts/data-api*.par.gz providers/data-api/build/data-api.par.gz
+          fi
+          if [ -f artifacts/key-vault*.par.gz ]; then
+            cp artifacts/key-vault*.par.gz providers/key-vault/build/key-vault.par.gz
+          fi
+          if [ -f artifacts/smtp-provider*.par.gz ]; then
+            cp artifacts/smtp-provider*.par.gz providers/smtp-provider/build/smtp-provider.par.gz
+          fi
 
-#           # Move WASM component artifacts
-#           if [ -f artifacts/crud-component*.wasm ]; then
-#             cp artifacts/crud-component*.wasm helper/data-api/component/build/crud_component.wasm
-#           fi
-#           if [ -f artifacts/http-wrapper*.wasm ]; then
-#             cp artifacts/http-wrapper*.wasm helper/http-wrapper/build/http_wrapper.wasm
-#           fi
-#           if [ -f artifacts/log-to-stdout*.wasm ]; then
-#             cp artifacts/log-to-stdout*.wasm target/wasm32-wasip2/release/log_to_stdout.wasm
-#           fi
+          # Move WASM component artifacts
+          if [ -f artifacts/crud-component*.wasm ]; then
+            cp artifacts/crud-component*.wasm helper/data-api/component/build/crud_component.wasm
+          fi
+          if [ -f artifacts/http-wrapper*.wasm ]; then
+            cp artifacts/http-wrapper*.wasm helper/http-wrapper/build/http_wrapper.wasm
+          fi
+          if [ -f artifacts/log-to-stdout*.wasm ]; then
+            cp artifacts/log-to-stdout*.wasm target/wasm32-wasip2/release/log_to_stdout.wasm
+          fi
 
-#           # Fallback: check if artifacts are already in build directories
-#           if [ -d artifacts/providers ]; then
-#             cp -r artifacts/providers/* providers/ 2>/dev/null || true
-#           fi
-#           if [ -d artifacts/helper ]; then
-#             cp -r artifacts/helper/* helper/ 2>/dev/null || true
-#           fi
-#           if [ -d artifacts/target ]; then
-#             cp -r artifacts/target/* target/ 2>/dev/null || true
-#           fi
+          # Fallback: check if artifacts are already in build directories
+          if [ -d artifacts/providers ]; then
+            cp -r artifacts/providers/* providers/ 2>/dev/null || true
+          fi
+          if [ -d artifacts/helper ]; then
+            cp -r artifacts/helper/* helper/ 2>/dev/null || true
+          fi
+          if [ -d artifacts/target ]; then
+            cp -r artifacts/target/* target/ 2>/dev/null || true
+          fi
 
-#       - name: Publish data-api to registry
-#         if: hashFiles('providers/data-api/build/data-api.par.gz') != ''
-#         run: |
-#           IMAGE_NAME="$REGISTRY/$REPO_OWNER/data-api"
+      - name: Publish data-api to registry
+        if: hashFiles('providers/data-api/build/data-api.par.gz') != ''
+        run: |
+          IMAGE_NAME="$REGISTRY/$REPO_OWNER/data-api"
 
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             ${IMAGE_NAME}:${VERSION} \
-#             ./providers/data-api/build/data-api.par.gz
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${IMAGE_NAME}:${VERSION} \
+            ./providers/data-api/build/data-api.par.gz
 
-#           # Also tag as latest
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             --allow-latest \
-#             ${IMAGE_NAME}:latest \
-#             ./providers/data-api/build/data-api.par.gz
+          # Also tag as latest
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --allow-latest \
+            ${IMAGE_NAME}:latest \
+            ./providers/data-api/build/data-api.par.gz
 
-#           echo "Published: ${IMAGE_NAME}:${VERSION}"
+          echo "Published: ${IMAGE_NAME}:${VERSION}"
 
-#       - name: Publish key-vault to registry
-#         if: hashFiles('providers/key-vault/build/key-vault.par.gz') != ''
-#         run: |
-#           IMAGE_NAME="$REGISTRY/$REPO_OWNER/key-vault"
+      - name: Publish key-vault to registry
+        if: hashFiles('providers/key-vault/build/key-vault.par.gz') != ''
+        run: |
+          IMAGE_NAME="$REGISTRY/$REPO_OWNER/key-vault"
 
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             ${IMAGE_NAME}:${VERSION} \
-#             ./providers/key-vault/build/key-vault.par.gz
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${IMAGE_NAME}:${VERSION} \
+            ./providers/key-vault/build/key-vault.par.gz
 
-#           # Also tag as latest
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             --allow-latest \
-#             ${IMAGE_NAME}:latest \
-#             ./providers/key-vault/build/key-vault.par.gz
+          # Also tag as latest
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --allow-latest \
+            ${IMAGE_NAME}:latest \
+            ./providers/key-vault/build/key-vault.par.gz
 
-#           echo "Published: ${IMAGE_NAME}:${VERSION}"
+          echo "Published: ${IMAGE_NAME}:${VERSION}"
 
-#       - name: Publish smtp-provider to registry
-#         if: hashFiles('providers/smtp-provider/build/smtp-provider.par.gz') != ''
-#         run: |
-#           IMAGE_NAME="$REGISTRY/$REPO_OWNER/smtp-provider"
+      - name: Publish smtp-provider to registry
+        if: hashFiles('providers/smtp-provider/build/smtp-provider.par.gz') != ''
+        run: |
+          IMAGE_NAME="$REGISTRY/$REPO_OWNER/smtp-provider"
 
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             ${IMAGE_NAME}:${VERSION} \
-#             ./providers/smtp-provider/build/smtp-provider.par.gz
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${IMAGE_NAME}:${VERSION} \
+            ./providers/smtp-provider/build/smtp-provider.par.gz
 
-#           # Also tag as latest
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             --allow-latest \
-#             ${IMAGE_NAME}:latest \
-#             ./providers/smtp-provider/build/smtp-provider.par.gz
+          # Also tag as latest
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --allow-latest \
+            ${IMAGE_NAME}:latest \
+            ./providers/smtp-provider/build/smtp-provider.par.gz
 
-#           echo "Published: ${IMAGE_NAME}:${VERSION}"
+          echo "Published: ${IMAGE_NAME}:${VERSION}"
 
-#       - name: Publish crud-component to registry
-#         if: hashFiles('helper/data-api/component/build/crud_component.wasm') != ''
-#         run: |
-#           IMAGE_NAME="$REGISTRY/$REPO_OWNER/crud-component"
+      - name: Publish crud-component to registry
+        if: hashFiles('helper/data-api/component/build/crud_component.wasm') != ''
+        run: |
+          IMAGE_NAME="$REGISTRY/$REPO_OWNER/crud-component"
 
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             ${IMAGE_NAME}:${VERSION} \
-#             ./helper/data-api/component/build/crud_component.wasm
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${IMAGE_NAME}:${VERSION} \
+            ./helper/data-api/component/build/crud_component.wasm
 
-#           # Also tag as latest
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             --allow-latest \
-#             ${IMAGE_NAME}:latest \
-#             ./helper/data-api/component/build/crud_component.wasm
+          # Also tag as latest
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --allow-latest \
+            ${IMAGE_NAME}:latest \
+            ./helper/data-api/component/build/crud_component.wasm
 
-#           echo "Published: ${IMAGE_NAME}:${VERSION}"
+          echo "Published: ${IMAGE_NAME}:${VERSION}"
 
-#       - name: Publish http-wrapper to registry
-#         if: hashFiles('helper/http-wrapper/build/http_wrapper.wasm') != ''
-#         run: |
-#           IMAGE_NAME="$REGISTRY/$REPO_OWNER/http-wrapper"
+      - name: Publish http-wrapper to registry
+        if: hashFiles('helper/http-wrapper/build/http_wrapper.wasm') != ''
+        run: |
+          IMAGE_NAME="$REGISTRY/$REPO_OWNER/http-wrapper"
 
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             ${IMAGE_NAME}:${VERSION} \
-#             ./helper/http-wrapper/build/http_wrapper.wasm
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${IMAGE_NAME}:${VERSION} \
+            ./helper/http-wrapper/build/http_wrapper.wasm
 
-#           # Also tag as latest
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             --allow-latest \
-#             ${IMAGE_NAME}:latest \
-#             ./helper/http-wrapper/build/http_wrapper.wasm
+          # Also tag as latest
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --allow-latest \
+            ${IMAGE_NAME}:latest \
+            ./helper/http-wrapper/build/http_wrapper.wasm
 
-#           echo "Published: ${IMAGE_NAME}:${VERSION}"
+          echo "Published: ${IMAGE_NAME}:${VERSION}"
 
-#       - name: Publish log-to-stdout to registry
-#         if: hashFiles('target/wasm32-wasip2/release/log_to_stdout.wasm') != ''
-#         run: |
-#           IMAGE_NAME="$REGISTRY/$REPO_OWNER/log-to-stdout"
+      - name: Publish log-to-stdout to registry
+        if: hashFiles('target/wasm32-wasip2/release/log_to_stdout.wasm') != ''
+        run: |
+          IMAGE_NAME="$REGISTRY/$REPO_OWNER/log-to-stdout"
 
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             ${IMAGE_NAME}:${VERSION} \
-#             ./target/wasm32-wasip2/release/log_to_stdout.wasm
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${IMAGE_NAME}:${VERSION} \
+            ./target/wasm32-wasip2/release/log_to_stdout.wasm
 
-#           # Also tag as latest
-#           wash push \
-#             --user ${{ github.actor }} \
-#             --password ${{ secrets.GITHUB_TOKEN }} \
-#             --allow-latest \
-#             ${IMAGE_NAME}:latest \
-#             ./target/wasm32-wasip2/release/log_to_stdout.wasm
+          # Also tag as latest
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --allow-latest \
+            ${IMAGE_NAME}:latest \
+            ./target/wasm32-wasip2/release/log_to_stdout.wasm
 
-#           echo "Published: ${IMAGE_NAME}:${VERSION}"
+          echo "Published: ${IMAGE_NAME}:${VERSION}"
 
-#       - name: Summary
-#         run: |
-#           echo "## 📦 Published Components to GitHub Packages" >> $GITHUB_STEP_SUMMARY
-#           echo "" >> $GITHUB_STEP_SUMMARY
-#           echo "**Version:** \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-#           echo "**Registry:** \`${REGISTRY}\`" >> $GITHUB_STEP_SUMMARY
-#           echo "" >> $GITHUB_STEP_SUMMARY
-#           echo "### Components Published:" >> $GITHUB_STEP_SUMMARY
-#           echo "" >> $GITHUB_STEP_SUMMARY
+      - name: Summary
+        run: |
+          echo "## 📦 Published Components to GitHub Packages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** \`${REGISTRY}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Components Published:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
-#           if [ -f providers/data-api/build/data-api.par.gz ]; then
-#             echo "- ✅ **data-api**" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/data-api:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/data-api:latest\`" >> $GITHUB_STEP_SUMMARY
-#           else
-#             echo "- ⏭️ data-api (skipped)" >> $GITHUB_STEP_SUMMARY
-#           fi
+          if [ -f providers/data-api/build/data-api.par.gz ]; then
+            echo "- ✅ **data-api**" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/data-api:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/data-api:latest\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ data-api (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
 
-#           if [ -f providers/key-vault/build/key-vault.par.gz ]; then
-#             echo "- ✅ **key-vault**" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/key-vault:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/key-vault:latest\`" >> $GITHUB_STEP_SUMMARY
-#           else
-#             echo "- ⏭️ key-vault (skipped)" >> $GITHUB_STEP_SUMMARY
-#           fi
+          if [ -f providers/key-vault/build/key-vault.par.gz ]; then
+            echo "- ✅ **key-vault**" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/key-vault:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/key-vault:latest\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ key-vault (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
 
-#           if [ -f providers/smtp-provider/build/smtp-provider.par.gz ]; then
-#             echo "- ✅ **smtp-provider**" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/smtp-provider:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/smtp-provider:latest\`" >> $GITHUB_STEP_SUMMARY
-#           else
-#             echo "- ⏭️ smtp-provider (skipped)" >> $GITHUB_STEP_SUMMARY
-#           fi
+          if [ -f providers/smtp-provider/build/smtp-provider.par.gz ]; then
+            echo "- ✅ **smtp-provider**" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/smtp-provider:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/smtp-provider:latest\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ smtp-provider (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
 
-#           echo "" >> $GITHUB_STEP_SUMMARY
-#           echo "### WASM Components:" >> $GITHUB_STEP_SUMMARY
-#           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### WASM Components:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
-#           if [ -f helper/data-api/component/build/crud_component.wasm ]; then
-#             echo "- ✅ **crud-component**" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/crud-component:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/crud-component:latest\`" >> $GITHUB_STEP_SUMMARY
-#           else
-#             echo "- ⏭️ crud-component (skipped)" >> $GITHUB_STEP_SUMMARY
-#           fi
+          if [ -f helper/data-api/component/build/crud_component.wasm ]; then
+            echo "- ✅ **crud-component**" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/crud-component:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/crud-component:latest\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ crud-component (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
 
-#           if [ -f helper/http-wrapper/build/http_wrapper.wasm ]; then
-#             echo "- ✅ **http-wrapper**" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/http-wrapper:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/http-wrapper:latest\`" >> $GITHUB_STEP_SUMMARY
-#           else
-#             echo "- ⏭️ http-wrapper (skipped)" >> $GITHUB_STEP_SUMMARY
-#           fi
+          if [ -f helper/http-wrapper/build/http_wrapper.wasm ]; then
+            echo "- ✅ **http-wrapper**" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/http-wrapper:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/http-wrapper:latest\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ http-wrapper (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
 
-#           if [ -f target/wasm32-wasip2/release/log_to_stdout.wasm ]; then
-#             echo "- ✅ **log-to-stdout**" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/log-to-stdout:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-#             echo "  - \`${REGISTRY}/${REPO_OWNER}/log-to-stdout:latest\`" >> $GITHUB_STEP_SUMMARY
-#           else
-#             echo "- ⏭️ log-to-stdout (skipped)" >> $GITHUB_STEP_SUMMARY
-#           fi
+          if [ -f target/wasm32-wasip2/release/log_to_stdout.wasm ]; then
+            echo "- ✅ **log-to-stdout**" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/log-to-stdout:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/log-to-stdout:latest\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ log-to-stdout (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
 
-#           echo "" >> $GITHUB_STEP_SUMMARY
-#           echo "### 🔍 View Packages" >> $GITHUB_STEP_SUMMARY
-#           echo "Visit: [https://github.com/orgs/${REPO_OWNER}/packages](https://github.com/orgs/${REPO_OWNER}/packages)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 View Packages" >> $GITHUB_STEP_SUMMARY
+          echo "Visit: [https://github.com/orgs/${REPO_OWNER}/packages](https://github.com/orgs/${REPO_OWNER}/packages)" >> $GITHUB_STEP_SUMMARY
