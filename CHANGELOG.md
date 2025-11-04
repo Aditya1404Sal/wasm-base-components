@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.2...v1.1.3) (2025-11-04)
+
+
+### Bug Fixes
+
+* automatically publish github packages and add environment name to ([d1d8143](https://github.com/bettyblocks/wasm-base-components/commit/d1d8143c48ce19b58bc36a1f758c56eb90143615))
+
 ## [1.1.2](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.1...v1.1.2) (2025-11-04)
 
 
