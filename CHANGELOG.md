@@ -1,3 +1,13 @@
+## [1.1.2](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.1...v1.1.2) (2025-11-04)
+
+
+### Bug Fixes
+
+* actually make the fetching of the version better ([bf3468b](https://github.com/bettyblocks/wasm-base-components/commit/bf3468b3d9731e4ae0d651e5d10658c569b8209f))
+* generate jaws secret in correct format and make version more ([4de7b8a](https://github.com/bettyblocks/wasm-base-components/commit/4de7b8a40a67881a90c31b7422b41b75602db00e))
+* put back the publish workflow ([5d085a9](https://github.com/bettyblocks/wasm-base-components/commit/5d085a96958d776122925b1b41849e7cad601f9d))
+* remove putting the files into a release, just use the artifacts of ([86eacaa](https://github.com/bettyblocks/wasm-base-components/commit/86eacaabff5459e69d0ba5c77d5d93f6eb28b5b0))
+
 ## [1.1.1](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.0...v1.1.1) (2025-11-03)
 
 
