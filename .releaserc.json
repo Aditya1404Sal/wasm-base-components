@@ -16,37 +16,6 @@
       }
     ],
     [
-      "@semantic-release/github",
-      {
-        "assets": [
-          {
-            "path": "providers/data-api/build/data-api.par.gz",
-            "label": "data-api-${nextRelease.gitTag}.par.gz"
-          },
-          {
-            "path": "providers/key-vault/build/key-vault.par.gz",
-            "label": "key-vault-${nextRelease.gitTag}.par.gz"
-          },
-          {
-            "path": "providers/smtp-provider/build/smtp-provider.par.gz",
-            "label": "smtp-provider-${nextRelease.gitTag}.par.gz"
-          },
-          {
-            "path": "helper/data-api/component/build/crud_component.wasm",
-            "label": "crud-component-${nextRelease.gitTag}.wasm"
-          },
-          {
-            "path": "helper/http-wrapper/build/http_wrapper.wasm",
-            "label": "http-wrapper-${nextRelease.gitTag}.wasm"
-          },
-          {
-            "path": "target/wasm32-wasip2/release/log_to_stdout.wasm",
-            "label": "log-to-stdout-${nextRelease.gitTag}.wasm"
-          }
-        ]
-      }
-    ],
-    [
       "@semantic-release/git",
       {
         "assets": ["CHANGELOG.md"],
@@ -55,4 +24,3 @@
     ]
   ]
 }
-
