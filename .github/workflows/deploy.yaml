@@ -1,4 +1,5 @@
 name: Deploy WADM to wasmcloud
+run-name: Deploy to ${{ inputs.environment }}
 
 on:
   workflow_dispatch:
@@ -18,6 +19,7 @@ on:
 
 jobs:
   deploy:
+    name: Deploy to ${{ inputs.environment }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     env:

@@ -1,6 +1,13 @@
 name: Publish WASM Components to GitHub Packages
+run-name: Publish to ${{ github.event_name == 'workflow_dispatch' && inputs.registry || 'ghcr.io' }} ${{ github.event_name == 'workflow_run' && '(auto)' || '' }}
 
 on:
+  workflow_run:
+    workflows: ["Build WASM Components"]
+    types:
+      - completed
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       version:
@@ -16,12 +23,14 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Only run if workflow_run succeeded or if manually triggered
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
       packages: write
 
     env:
-      REGISTRY: ${{ inputs.registry }}
+      REGISTRY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry || 'ghcr.io' }}
       REPO_OWNER: ${{ github.repository_owner }}
 
     steps:
@@ -30,15 +39,14 @@ jobs:
           fetch-depth: 0
 
       - name: Determine version
-        if: github.event_name == 'workflow_dispatch'
         run: |
-          if [ -z "${{ inputs.version }}" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            echo "Using provided version: ${{ inputs.version }}"
+            echo "INPUT_VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+          else
             LATEST_TAG=$(git describe --tags --abbrev=0)
             echo "Using latest tag: $LATEST_TAG"
             echo "INPUT_VERSION=$LATEST_TAG" >> $GITHUB_ENV
-          else
-            echo "Using provided version: ${{ inputs.version }}"
-            echo "INPUT_VERSION=${{ inputs.version }}" >> $GITHUB_ENV
           fi
 
       - uses: taiki-e/install-action@v2
