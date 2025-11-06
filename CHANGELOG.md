@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.4...v1.1.5) (2025-11-06)
+
+
+### Bug Fixes
+
+* rename vabi to jenv url ([9c22ccf](https://github.com/bettyblocks/wasm-base-components/commit/9c22ccfecab843948afda46ff8e8d54f20163b57))
+
 ## [1.1.4](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.3...v1.1.4) (2025-11-06)
 
 
