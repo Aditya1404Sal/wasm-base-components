@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.3...v1.1.4) (2025-11-06)
+
+
+### Bug Fixes
+
+* rename acceptance to acc for deployment ([6967464](https://github.com/bettyblocks/wasm-base-components/commit/696746441c4b5f44fa336e2552851c53d8bfe5a4))
+
 ## [1.1.3](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.2...v1.1.3) (2025-11-04)
 
 
