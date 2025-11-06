@@ -1,3 +1,10 @@
+## [1.1.6](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.5...v1.1.6) (2025-11-06)
+
+
+### Bug Fixes
+
+* deep clone wadm to not overwrite origin ([3f637b1](https://github.com/bettyblocks/wasm-base-components/commit/3f637b168107739502104a484424e2c6e5d3dc1c))
+
 ## [1.1.5](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.4...v1.1.5) (2025-11-06)
 
 
