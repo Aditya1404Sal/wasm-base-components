@@ -30,8 +30,18 @@ const determineKeyvaultEndpoint = (env: Environment, zone: string) => {
 	}
 };
 
+function renameZone(zone: string) {
+	// Rename zones where url is different from zone name
+	switch (zone) {
+		case "vabi": return "jenv";
+		default:
+			return zone;
+	}
+}
+
 function formatUrl(zone: string) {
-	return `https://${zone}.betty.zone/api/actions-compiler/internal/wadm/deploy_native_app`;
+	const renamedZone = renameZone(zone);
+	return `https://${renamedZone}.betty.zone/api/actions-compiler/internal/wadm/deploy_native_app`;
 }
 
 async function renderAndDeploy(
