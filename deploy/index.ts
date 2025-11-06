@@ -112,7 +112,7 @@ async function main() {
 	if (env === "production") {
 		const tasks = [];
 		for (const zone of Object.keys(KEYVAULTS)) {
-			if (["edge", "acceptance"].includes(zone)) {
+			if (["edge", "acc"].includes(zone)) {
 				continue;
 			}
 			tasks.push(renderAndDeploy(env, version, zone, dryRun));
