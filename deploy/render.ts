@@ -33,7 +33,11 @@ function replaceVariables(config: Json, variables: Variables): Json {
   return config;
 }
 
-export const render = async (options: Variables): Promise<Json> => replaceVariables(wadm, options)
+const render = async (options: Variables): Promise<Json> => {
+  // Deep-clone the imported template so we don't mutate the shared `wadm` object.
+  const templateClone = JSON.parse(JSON.stringify(wadm)) as Json;
+  return replaceVariables(templateClone, options);
+};
 
 export const renderToFile = async (options: Variables, filePath: string): Promise<Bun.BunFile> => {
   const rendered = await render(options);
