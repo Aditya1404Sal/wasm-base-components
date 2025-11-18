@@ -1,128 +1,91 @@
+use serde::Deserialize;
+use wasmcloud_component::http;
+
 wit_bindgen::generate!({ generate_all });
-use wasmcloud_component::info;
 
-use crate::data_api::crud::crud::{
-    create, delete, update, HelperContext, Model, PropertyKey, PropertyKind, PropertyMap,
-};
-use crate::exports::test::runner::test::{Guest, JsonString};
+use crate::betty_blocks::data_api::data_api::{request as data_api_request, HelperContext};
 
-struct TestComponent;
+#[derive(Deserialize, Default)]
+struct DataApiContext {
+    jwt: Option<String>,
+    application_id: Option<String>,
+}
 
-impl Guest for TestComponent {
-    fn run_create() -> Result<JsonString, String> {
-        info!("Calling run");
+#[derive(Deserialize)]
+struct RequestBody {
+    context: Option<DataApiContext>,
+    query: String,
+    variables: String,
+}
 
-        let test_context = HelperContext {
-            application_id: "test".to_string(),
-            action_id: "test".to_string(),
-            log_id: "test".to_string(),
-            jwt: None,
-            encrypted_configurations: None,
-        };
+struct Component;
+// 2**24 = 16mb
+const MAX_READ: u64 = 2u64.pow(24);
 
-        let model = Model {
-            name: "test".to_string(),
-        };
-        let mapping = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: PropertyKind::String,
-                name: "name".to_string(),
-                object_fields: None,
-            }],
-            value: Some("New Task".to_string()),
-        }];
+enum Error {
+    InvalidInput(String),
+    FailedToReadBody(String),
+}
 
-        info!("Calling create");
-        let result = create(&test_context, &model, &mapping, None);
-        info!("Called create");
-
-        dbg!(&result);
-
-        match result {
-            Ok(reply) => {
-                info!("Success: {}", reply);
-                Ok("success".to_string())
+impl From<Error> for http::Response<String> {
+    fn from(val: Error) -> Self {
+        match val {
+            Error::InvalidInput(message) => {
+                http::Response::builder().status(400).body(message).unwrap()
             }
-            Err(e) => {
-                info!("Error: {}", e);
-                Err("success".to_string())
-            }
-        }
-    }
-
-    fn run_update() -> Result<JsonString, String> {
-        info!("Calling run");
-
-        let test_context = HelperContext {
-            application_id: "test".to_string(),
-            action_id: "test".to_string(),
-            log_id: "test".to_string(),
-            jwt: None,
-            encrypted_configurations: None,
-        };
-
-        let model = Model {
-            name: "test".to_string(),
-        };
-        let mapping = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: PropertyKind::String,
-                name: "name".to_string(),
-                object_fields: None,
-            }],
-            value: Some("New Task".to_string()),
-        }];
-
-        info!("Calling update");
-        let result = update(&test_context, &model, "1", &mapping, None);
-        info!("Update called");
-
-        dbg!(&result);
-
-        match result {
-            Ok(reply) => {
-                info!("Success: {}", reply);
-                Ok("success".to_string())
-            }
-            Err(e) => {
-                info!("Error: {}", e);
-                Err("success".to_string())
-            }
-        }
-    }
-
-    fn run_delete() -> Result<JsonString, String> {
-        info!("Calling run");
-
-        let test_context = HelperContext {
-            application_id: "test".to_string(),
-            action_id: "test".to_string(),
-            log_id: "test".to_string(),
-            jwt: None,
-            encrypted_configurations: None,
-        };
-
-        let model = Model {
-            name: "test".to_string(),
-        };
-
-        info!("Calling delete");
-        let result = delete(&test_context, &model, "1");
-        info!("Update delete");
-
-        dbg!(&result);
-
-        match result {
-            Ok(reply) => {
-                info!("Success: {}", reply);
-                Ok("success".to_string())
-            }
-            Err(e) => {
-                info!("Error: {}", e);
-                Err("success".to_string())
+            Error::FailedToReadBody(message) => {
+                http::Response::builder().status(500).body(message).unwrap()
             }
         }
     }
 }
 
-export!(TestComponent);
+fn inner_handle(request: http::IncomingRequest) -> Result<http::Response<String>, Error> {
+    let body = request.body();
+
+    body.subscribe().block();
+    let body_bytes = body
+        .read(MAX_READ)
+        .map_err(|e| Error::FailedToReadBody(e.to_string()))?;
+
+    let RequestBody {
+        context,
+        query,
+        variables,
+    } = match serde_json::from_slice(&body_bytes) {
+        Ok(rb) => rb,
+        Err(e) => return Err(Error::InvalidInput(e.to_string())),
+    };
+
+    let context = context.unwrap_or(DataApiContext::default());
+
+    let helper_context = HelperContext {
+        application_id: context
+            .application_id
+            .unwrap_or("empty".to_string())
+            .to_string(),
+        action_id: "empty".to_string(),
+        log_id: "empty".to_string(),
+        encrypted_configurations: None,
+        jwt: context.jwt,
+    };
+
+    let result = data_api_request(&helper_context, &query, &variables);
+    match result {
+        Ok(response) => Ok(http::Response::new(response)),
+        Err(e) => Ok(http::Response::new(e)),
+    }
+}
+
+impl http::Server for Component {
+    fn handle(
+        request: http::IncomingRequest,
+    ) -> http::Result<http::Response<impl http::OutgoingBody>> {
+        match inner_handle(request) {
+            Ok(response) => Ok(response),
+            Err(e) => Ok(e.into()),
+        }
+    }
+}
+
+http::export!(Component);
