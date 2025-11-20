@@ -88,7 +88,7 @@ async fn inner_request(
         }),
     });
 
-    let token = generate_jaws(&config, helper_context.application_id).await?;
+    let token = generate_jaws(&config, helper_context.application_id)?;
 
     let metadata = request.metadata_mut();
     metadata.insert(
@@ -106,7 +106,7 @@ async fn inner_request(
     Ok(message)
 }
 
-async fn generate_jaws(config: &Config, application_id: String) -> anyhow::Result<String> {
+fn generate_jaws(config: &Config, application_id: String) -> anyhow::Result<String> {
     let issued_at = jaws_rs::jsonwebtoken::get_current_timestamp();
     let claims = jaws_rs::Claims::new(
         config.jaws_issuer.clone(),

@@ -3706,7 +3706,7 @@ dependencies = [
 [[package]]
 name = "wash-runtime"
 version = "0.2.0"
-source = "git+https://github.com/bettyblocks/wash?rev=7e93a701182129f578db87bee2d4ab38a579eccc#7e93a701182129f578db87bee2d4ab38a579eccc"
+source = "git+https://github.com/bettyblocks/wash?branch=feat%2Fadd-grpc-client#47993809cc8125ab5345b1495737abff791f6b77"
 dependencies = [
  "anyhow",
  "async-nats",

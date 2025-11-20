@@ -20,7 +20,7 @@ uuid = { version = "1.8.0", features = ["v4"] }
 tracing = "0.1"
 
 [dev-dependencies]
-wash-runtime = { git = "https://github.com/bettyblocks/wash", features = ["grpc"], rev = "7e93a701182129f578db87bee2d4ab38a579eccc" }
+wash-runtime = { git = "https://github.com/bettyblocks/wash", features = ["grpc"], branch = "feat/add-grpc-client" }
 tonic = { version = "0.13", default-features = false, features = ["codegen", "prost", "transport"] }
 serde_json = "1.0.145"
 bytes = "1.11.0"
