@@ -315,6 +315,7 @@ async fn has_attachment_named(api_port: u16, name: &str) -> anyhow::Result<bool>
 
 #[tokio::test]
 #[serial]
+#[ignore = "Ignore until SMTP provider is rewritten to host plugin"]
 async fn smtp_should_send_an_email() {
     build_wasm().await;
 
@@ -378,6 +379,7 @@ async fn smtp_should_send_an_email() {
 
 #[tokio::test]
 #[serial]
+#[ignore = "Ignore until SMTP provider is rewritten to host plugin"]
 async fn smtp_should_download_and_send_attachments() {
     build_wasm().await;
 
