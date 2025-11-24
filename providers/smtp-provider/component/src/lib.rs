@@ -117,7 +117,7 @@ impl http::Server for SmtpSendMailComponent {
         let send_input: Input = match serde_json::from_slice::<Input>(&body_bytes) {
             Ok(send_input) => send_input,
             Err(err) => {
-                let msg = format!("Invalid body: {}", err);
+                let msg = format!("Invalid body: {err}");
 
                 return Ok(http::Response::builder()
                     .status(412)
@@ -136,7 +136,7 @@ impl http::Server for SmtpSendMailComponent {
         match serde_json::to_string(&SendResultDef::from(result)) {
             Ok(json) => Ok(http::Response::new(json)),
             Err(e) => {
-                eprintln!("Error serializing result: {}", e);
+                eprintln!("Error serializing result: {e}");
                 Err(http::ErrorCode::InternalError(Some(
                     "Invalid output".to_string(),
                 )))

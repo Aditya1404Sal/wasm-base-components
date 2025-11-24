@@ -6,8 +6,8 @@ use serde_json::json;
 use serial_test::serial;
 use testcontainers::core::logs::LogFrame;
 use testcontainers::runners::AsyncRunner;
+use testcontainers::{core::IntoContainerPort, core::WaitFor, CopyDataSource, GenericImage};
 use testcontainers::{ContainerAsync, ImageExt};
-use testcontainers::{CopyDataSource, GenericImage, core::IntoContainerPort, core::WaitFor};
 use tokio::process::Command;
 use tokio::sync::OnceCell;
 use tokio::time::sleep;
@@ -28,7 +28,7 @@ static ONCES: OnceCell<(ContainerDef, ContainerDef, ContainerDef, ContainerDef)>
     OnceCell::const_new();
 
 // NOTE: Keeping it here for debugging purposes
-fn show_logs(logframe: &LogFrame) {
+fn _show_logs(logframe: &LogFrame) {
     match logframe {
         LogFrame::StdOut(bytes) => println!("{}", String::from_utf8_lossy(bytes)),
         LogFrame::StdErr(bytes) => println!("{}", String::from_utf8_lossy(bytes)),
@@ -36,11 +36,7 @@ fn show_logs(logframe: &LogFrame) {
 }
 
 async fn build_wasm() {
-    let output = Command::new("wash")
-        .arg("build")
-        .output()
-        .await
-        .unwrap();
+    let output = Command::new("wash").arg("build").output().await.unwrap();
 
     if !output.status.success() {
         println!(
@@ -162,7 +158,7 @@ async fn start_everything() -> (ContainerDef, ContainerDef, ContainerDef, Contai
 
 async fn publish_components(bridge_ip: &IpAddr) {
     let client_connect = ClientConnectOptions {
-        url: Some(format!("{}:{}", bridge_ip, NATS_PORT)),
+        url: Some(format!("{bridge_ip}:{NATS_PORT}")),
         ..Default::default()
     };
 
@@ -200,7 +196,7 @@ async fn publish_components(bridge_ip: &IpAddr) {
 }
 
 async fn get_message_id(api_port: u16) -> String {
-    let messages_response = reqwest::get(format!("http://127.0.0.1:{}/api/messages", api_port))
+    let messages_response = reqwest::get(format!("http://127.0.0.1:{api_port}/api/messages"))
         .await
         .expect("Failed to get");
 
@@ -213,8 +209,7 @@ async fn get_message_id(api_port: u16) -> String {
 async fn get_mail_text(api_port: u16) -> String {
     let id = get_message_id(api_port).await;
     let message_response = reqwest::get(format!(
-        "http://127.0.0.1:{}/api/messages/{}/plaintext",
-        api_port, id,
+        "http://127.0.0.1:{api_port}/api/messages/{id}/plaintext",
     ))
     .await
     .expect("Failed to get message");
@@ -283,10 +278,9 @@ async fn get_mail_text(api_port: u16) -> String {
 //         }
 async fn has_attachment_named(api_port: u16, name: &str) -> anyhow::Result<bool> {
     let id = get_message_id(api_port).await;
-    let message_response =
-        reqwest::get(format!("http://127.0.0.1:{}/api/messages/{}", api_port, id,))
-            .await
-            .expect("Failed to get message");
+    let message_response = reqwest::get(format!("http://127.0.0.1:{api_port}/api/messages/{id}",))
+        .await
+        .expect("Failed to get message");
 
     let v: serde_json::Value = message_response
         .json()
@@ -365,7 +359,7 @@ async fn smtp_should_send_an_email() {
         .expect("Failed to get wasmcloud port");
 
     let resp = client
-        .post(format!("http://127.0.0.1:{}", wasmcloud_port))
+        .post(format!("http://127.0.0.1:{wasmcloud_port}"))
         .json(&payload)
         .send()
         .await
@@ -434,7 +428,7 @@ async fn smtp_should_download_and_send_attachments() {
         .expect("Failed to get wasmcloud port");
 
     let resp = client
-        .post(format!("http://127.0.0.1:{}", wasmcloud_port))
+        .post(format!("http://127.0.0.1:{wasmcloud_port}"))
         .json(&payload)
         .send()
         .await
@@ -447,9 +441,7 @@ async fn smtp_should_download_and_send_attachments() {
         .await
         .expect("Failed to get mailcatcher API port");
 
-    assert!(
-        has_attachment_named(mailcatcher_api_port, "betty logo")
-            .await
-            .unwrap()
-    );
+    assert!(has_attachment_named(mailcatcher_api_port, "betty logo")
+        .await
+        .unwrap());
 }

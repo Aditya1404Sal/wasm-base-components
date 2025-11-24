@@ -1044,7 +1044,7 @@ fragment taskFields on Task {
         let model_name = "user";
 
         assert_eq!(
-            graphql_minify::minify(format_input_mutation(&mutation_name, &model_name)),
+            graphql_minify::minify(format_input_mutation(mutation_name, model_name)),
             graphql_minify::minify(
                 r#"
 mutation ($input: userInput, $validationSets: [String]) {
@@ -1062,7 +1062,7 @@ mutation ($input: userInput, $validationSets: [String]) {
         let model_name = "user";
 
         assert_eq!(
-            graphql_minify::minify(format_update_mutation(&mutation_name, &model_name)),
+            graphql_minify::minify(format_update_mutation(mutation_name, model_name)),
             graphql_minify::minify(
                 r#"
 mutation ($id: Int!, $input: userInput, $validationSets: [String]) {
@@ -1079,7 +1079,7 @@ mutation ($id: Int!, $input: userInput, $validationSets: [String]) {
         let mutation_name = "deleteuser";
 
         assert_eq!(
-            graphql_minify::minify(format_delete_mutation(&mutation_name)),
+            graphql_minify::minify(format_delete_mutation(mutation_name)),
             graphql_minify::minify(
                 r#"
 mutation ($id: Int!) {
@@ -1094,11 +1094,12 @@ mutation ($id: Int!) {
     #[test]
     fn get_record_id_should_get_id_from_request_result() {
         let mutation_name = "createuser";
-        let request_result = serde_json::json!({mutation_name: {"id": "uuid"}}).to_string();
+        let request_result =
+            serde_json::json!({ "data": { mutation_name: { "id": "uuid" } } }).to_string();
 
         assert_eq!(
-            get_record_id(&request_result, &mutation_name),
-            Some("uuid".to_string())
+            get_record_id(&request_result, mutation_name),
+            Ok("uuid".to_string())
         );
     }
 }

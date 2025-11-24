@@ -325,7 +325,7 @@ impl DataApi for DataGrpcServer {
 
         match authenticate(&metadata, &application_id).await {
             AuthResult::Ok => {
-                if application_id == APPLICATION_ID.to_string() {
+                if application_id == APPLICATION_ID {
                     let body = format_error_json(serde_json::json!({
                         "message": "something went wrong"
                     }));

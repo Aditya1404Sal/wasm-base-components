@@ -8,7 +8,7 @@ wit_bindgen::generate!({ generate_all });
 struct Logger;
 
 impl Guest for Logger {
-    fn log(level: logging::Level, _context: String, message: String) -> () {
+    fn log(level: logging::Level, _context: String, message: String) {
         // let subscriber = Registry::default().with(tracing_logfmt::layer());
         // dispatcher::set_global_default(Dispatch::new(subscriber)).ok();
         tracing_subscriber::fmt().try_init().ok();

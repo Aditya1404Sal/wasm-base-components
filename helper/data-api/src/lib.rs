@@ -46,7 +46,7 @@ impl Guest for DataApi {
     ) -> Result<String, String> {
         let config = match Config::from_env() {
             Ok(config) => config,
-            Err(e) => return Err(format!("Configuration error: {:#}", e)),
+            Err(e) => return Err(format!("Configuration error: {e:#}")),
         };
 
         let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -54,12 +54,12 @@ impl Guest for DataApi {
             .build()
         {
             Ok(rt) => rt,
-            Err(e) => return Err(format!("failed to create tokio runtime: {}", e)),
+            Err(e) => return Err(format!("failed to create tokio runtime: {e}")),
         };
 
         runtime
             .block_on(inner_request(config, helper_context, query, variables))
-            .map_err(|e| format!("{:#}", e))
+            .map_err(|e| format!("{e:#}"))
     }
 }
 
@@ -93,7 +93,7 @@ async fn inner_request(
     let metadata = request.metadata_mut();
     metadata.insert(
         "authorization",
-        format!("Bearer {}", token)
+        format!("Bearer {token}")
             .parse()
             .context("Failed to create valid bearer header")?,
     );
