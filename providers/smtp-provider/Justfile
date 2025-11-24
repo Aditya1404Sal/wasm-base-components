@@ -1,11 +1,9 @@
-fetch_wit_deps:
-  wash wit deps
 
-build: fetch_wit_deps
-  wash build
+build:
+    wash build
 
 test:
-    cargo test --lib --bins
+    cargo test
 
 integration-test:
     cargo test --tests '*'
