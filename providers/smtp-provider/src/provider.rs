@@ -1,15 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use anyhow::Context as _;
 use lettre::message::header::ContentType;
 use lettre::message::{MultiPart, SinglePart};
 use lettre::{SmtpTransport, Transport};
 use reqwest::header::HeaderValue;
-use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 use tokio::task::JoinSet;
-use tracing::info;
 use wasmcloud_provider_sdk::initialize_observability;
 use wasmcloud_provider_sdk::{
     run_provider, serve_provider_exports, Context, Provider, ProviderInitConfig,

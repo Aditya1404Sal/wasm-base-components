@@ -1,5 +1,4 @@
-name = "data-api-test-component"
-version = "0.1.0"
+name ="crud-component"
 language = "rust"
 type = "component"
 
@@ -8,4 +7,4 @@ wasm_target = "wasm32-wasip2"
 
 [[registry.pull.sources]]
 target = "betty-blocks:data-api/data-api"
-source = "file://../wit/world.wit"
+source = "file://../data-api/wit/world.wit"

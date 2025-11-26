@@ -1,6 +1,7 @@
-name = "mock-graphql-provider"
+name = "data-api-component"
+version = "0.1.0"
 language = "rust"
-type = "provider"
+type = "component"
 
-[provider]
-vendor = "Betty Blocks"
+[component]
+wasm_target = "wasm32-wasip2"

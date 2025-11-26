@@ -81,28 +81,25 @@ jobs:
       - name: Organize artifacts
         run: |
           # Create build directories if they don't exist
-          mkdir -p providers/data-api/build
-          mkdir -p providers/key-vault/build
+          mkdir -p helper/data-api/build
+          mkdir -p helper/crud/build
           mkdir -p providers/smtp-provider/build
-          mkdir -p helper/data-api/component/build
           mkdir -p helper/http-wrapper/build
           mkdir -p target/wasm32-wasip2/release
 
           # Move provider artifacts (.par.gz files)
-          if [ -f artifacts/data-api*.par.gz ]; then
-            cp artifacts/data-api*.par.gz providers/data-api/build/data-api.par.gz
-          fi
-          if [ -f artifacts/key-vault*.par.gz ]; then
-            cp artifacts/key-vault*.par.gz providers/key-vault/build/key-vault.par.gz
-          fi
           if [ -f artifacts/smtp-provider*.par.gz ]; then
             cp artifacts/smtp-provider*.par.gz providers/smtp-provider/build/smtp-provider.par.gz
           fi
 
           # Move WASM component artifacts
           if [ -f artifacts/crud-component*.wasm ]; then
-            cp artifacts/crud-component*.wasm helper/data-api/component/build/crud_component.wasm
+            cp artifacts/crud-component*.wasm helper/crud/build/crud_component.wasm
           fi
+          if [ -f artifacts/data-api-component*.wasm ]; then
+            cp artifacts/data-api-component*.wasm helper/data-api/build/data_api_component.wasm
+          fi
+
           if [ -f artifacts/http-wrapper*.wasm ]; then
             cp artifacts/http-wrapper*.wasm helper/http-wrapper/build/http_wrapper.wasm
           fi
@@ -120,48 +117,6 @@ jobs:
           if [ -d artifacts/target ]; then
             cp -r artifacts/target/* target/ 2>/dev/null || true
           fi
-
-      - name: Publish data-api to registry
-        if: hashFiles('providers/data-api/build/data-api.par.gz') != ''
-        run: |
-          IMAGE_NAME="$REGISTRY/$REPO_OWNER/data-api"
-
-          wash push \
-            --user ${{ github.actor }} \
-            --password ${{ secrets.GITHUB_TOKEN }} \
-            ${IMAGE_NAME}:${VERSION} \
-            ./providers/data-api/build/data-api.par.gz
-
-          # Also tag as latest
-          wash push \
-            --user ${{ github.actor }} \
-            --password ${{ secrets.GITHUB_TOKEN }} \
-            --allow-latest \
-            ${IMAGE_NAME}:latest \
-            ./providers/data-api/build/data-api.par.gz
-
-          echo "Published: ${IMAGE_NAME}:${VERSION}"
-
-      - name: Publish key-vault to registry
-        if: hashFiles('providers/key-vault/build/key-vault.par.gz') != ''
-        run: |
-          IMAGE_NAME="$REGISTRY/$REPO_OWNER/key-vault"
-
-          wash push \
-            --user ${{ github.actor }} \
-            --password ${{ secrets.GITHUB_TOKEN }} \
-            ${IMAGE_NAME}:${VERSION} \
-            ./providers/key-vault/build/key-vault.par.gz
-
-          # Also tag as latest
-          wash push \
-            --user ${{ github.actor }} \
-            --password ${{ secrets.GITHUB_TOKEN }} \
-            --allow-latest \
-            ${IMAGE_NAME}:latest \
-            ./providers/key-vault/build/key-vault.par.gz
-
-          echo "Published: ${IMAGE_NAME}:${VERSION}"
 
       - name: Publish smtp-provider to registry
         if: hashFiles('providers/smtp-provider/build/smtp-provider.par.gz') != ''
@@ -185,7 +140,7 @@ jobs:
           echo "Published: ${IMAGE_NAME}:${VERSION}"
 
       - name: Publish crud-component to registry
-        if: hashFiles('helper/data-api/component/build/crud_component.wasm') != ''
+        if: hashFiles('helper/crud/build/crud_component.wasm') != ''
         run: |
           IMAGE_NAME="$REGISTRY/$REPO_OWNER/crud-component"
 
@@ -193,7 +148,7 @@ jobs:
             --user ${{ github.actor }} \
             --password ${{ secrets.GITHUB_TOKEN }} \
             ${IMAGE_NAME}:${VERSION} \
-            ./helper/data-api/component/build/crud_component.wasm
+            ./helper/crud/build/crud_component.wasm
 
           # Also tag as latest
           wash push \
@@ -201,7 +156,28 @@ jobs:
             --password ${{ secrets.GITHUB_TOKEN }} \
             --allow-latest \
             ${IMAGE_NAME}:latest \
-            ./helper/data-api/component/build/crud_component.wasm
+            ./helper/crud/build/crud_component.wasm
+
+          echo "Published: ${IMAGE_NAME}:${VERSION}"
+
+      - name: Publish data-api to registry
+        if: hashFiles('helper/data-api/build/data_api_component.wasm') != ''
+        run: |
+          IMAGE_NAME="$REGISTRY/$REPO_OWNER/data-api-component"
+
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${IMAGE_NAME}:${VERSION} \
+            ./helper/data-api/build/data_api_component.wasm
+
+          # Also tag as latest
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --allow-latest \
+            ${IMAGE_NAME}:latest \
+            ./helper/data-api/build/data_api_component.wasm
 
           echo "Published: ${IMAGE_NAME}:${VERSION}"
 
@@ -257,22 +233,6 @@ jobs:
           echo "### Components Published:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -f providers/data-api/build/data-api.par.gz ]; then
-            echo "- ✅ **data-api**" >> $GITHUB_STEP_SUMMARY
-            echo "  - \`${REGISTRY}/${REPO_OWNER}/data-api:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-            echo "  - \`${REGISTRY}/${REPO_OWNER}/data-api:latest\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- ⏭️ data-api (skipped)" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ -f providers/key-vault/build/key-vault.par.gz ]; then
-            echo "- ✅ **key-vault**" >> $GITHUB_STEP_SUMMARY
-            echo "  - \`${REGISTRY}/${REPO_OWNER}/key-vault:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
-            echo "  - \`${REGISTRY}/${REPO_OWNER}/key-vault:latest\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- ⏭️ key-vault (skipped)" >> $GITHUB_STEP_SUMMARY
-          fi
-
           if [ -f providers/smtp-provider/build/smtp-provider.par.gz ]; then
             echo "- ✅ **smtp-provider**" >> $GITHUB_STEP_SUMMARY
             echo "  - \`${REGISTRY}/${REPO_OWNER}/smtp-provider:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
@@ -285,12 +245,20 @@ jobs:
           echo "### WASM Components:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -f helper/data-api/component/build/crud_component.wasm ]; then
+          if [ -f helper/crudbuild/crud_component.wasm ]; then
             echo "- ✅ **crud-component**" >> $GITHUB_STEP_SUMMARY
             echo "  - \`${REGISTRY}/${REPO_OWNER}/crud-component:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
             echo "  - \`${REGISTRY}/${REPO_OWNER}/crud-component:latest\`" >> $GITHUB_STEP_SUMMARY
           else
             echo "- ⏭️ crud-component (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f helper/data-api/build/data_api_component.wasm ]; then
+            echo "- ✅ **crud-component**" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/data-api-component:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/data-api-component:latest\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ data-api-component (skipped)" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ -f helper/http-wrapper/build/http_wrapper.wasm ]; then

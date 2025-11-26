@@ -1,6 +1,0 @@
-name = "Key Vault"
-language = "rust"
-type = "provider"
-
-[provider]
-vendor = "Betty Blocks"
