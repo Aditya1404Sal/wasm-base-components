@@ -246,13 +246,7 @@ fn parse_assigned_properties(property_map: PropertyMapping) -> serde_json::Value
     serde_json::Value::Object(result)
 }
 
-fn fetch_record(
-    helper_context: HelperContext,
-    model_name: &str,
-    id: &str,
-    fragment: &GraphQL,
-) -> Result<JsonString, String> {
-    let query_name = format!("one{model_name}",);
+fn create_fetch_record_query(model_name: &str, query_name: &str, fragment: &GraphQL) -> String {
     let GraphQL { name, gql } = fragment;
 
     let selection_set: String = if !gql.is_empty() {
@@ -261,14 +255,24 @@ fn fetch_record(
         "id".to_string()
     };
 
-    let query = format!(
+    format!(
         r#"{gql}
         query($where: {model_name}FilterInput) {{
             {query_name}(where: $where) {{
                 {selection_set}
             }}
         }}"#,
-    );
+    )
+}
+
+fn fetch_record(
+    helper_context: HelperContext,
+    model_name: &str,
+    id: &str,
+    fragment: &GraphQL,
+) -> Result<JsonString, String> {
+    let query_name = format!("one{model_name}",);
+    let query = create_fetch_record_query(model_name, &query_name, fragment);
 
     let result = request(
         &helper_context,
@@ -488,70 +492,73 @@ mod tests {
         }
     }
 
-    use crate::exports::betty_blocks::crud::crud::ObjectField;
-    use serde_json::json;
-
     use super::*;
 
-    #[test]
-    fn returns_task_fragment() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "STRING".to_string(),
-                name: "name".to_string(),
-                object_fields: None,
-            }],
-            value: Some("New Task".to_string()),
-        }];
+    mod parse_to_gql_fragment {
+        use crate::exports::betty_blocks::crud::crud::ObjectField;
+        use serde_json::json;
 
-        let model_name = "Task";
+        use super::*;
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+        #[test]
+        fn returns_task_fragment() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "STRING".to_string(),
+                    name: "name".to_string(),
+                    object_fields: None,
+                }],
+                value: Some("New Task".to_string()),
+            }];
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: r#"
+            let model_name = "Task";
+
+            let fragment = parse_to_gql_fragment(model_name, property_map);
+
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: r#"
 fragment taskFields on Task {
   id
   name
 }"#
-                .to_string(),
-                name: "taskFields".to_string()
-            }
-            .minify()
-        );
-    }
+                    .to_string(),
+                    name: "taskFields".to_string()
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_task_fragment_with_object_property() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "OBJECT".to_string(),
-                name: "object".to_string(),
-                object_fields: Some(vec![
-                    ObjectField {
-                        name: "uuid".to_string(),
-                    },
-                    ObjectField {
-                        name: "answer".to_string(),
-                    },
-                    ObjectField {
-                        name: "score".to_string(),
-                    },
-                ]),
-            }],
-            value: Some("New Task".to_string()),
-        }];
+        #[test]
+        fn returns_task_fragment_with_object_property() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "OBJECT".to_string(),
+                    name: "object".to_string(),
+                    object_fields: Some(vec![
+                        ObjectField {
+                            name: "uuid".to_string(),
+                        },
+                        ObjectField {
+                            name: "answer".to_string(),
+                        },
+                        ObjectField {
+                            name: "score".to_string(),
+                        },
+                    ]),
+                }],
+                value: Some("New Task".to_string()),
+            }];
 
-        let model_name = "Task";
+            let model_name = "Task";
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+            let fragment = parse_to_gql_fragment(model_name, property_map);
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: r#"
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: r#"
 fragment taskFields on Task {
     id
     object {
@@ -560,40 +567,40 @@ fragment taskFields on Task {
         score
     }
 }"#
-                .to_string(),
-                name: "taskFields".to_string(),
-            }
-            .minify()
-        );
-    }
+                    .to_string(),
+                    name: "taskFields".to_string(),
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_task_fragment_with_belongs_to_relation() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "BELONGS_TO".to_string(),
-                name: "model".to_string(),
-                object_fields: None,
-            }],
-            value: Some(
-                json!({
-                    "createdAt": "2023-04-25T10:11:55+02:00",
-                    "id": 1,
-                    "name": "model",
-                    "updatedAt": "2023-04-25T10:24:05+02:00"
-                })
-                .to_string(),
-            ),
-        }];
+        #[test]
+        fn returns_task_fragment_with_belongs_to_relation() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "BELONGS_TO".to_string(),
+                    name: "model".to_string(),
+                    object_fields: None,
+                }],
+                value: Some(
+                    json!({
+                        "createdAt": "2023-04-25T10:11:55+02:00",
+                        "id": 1,
+                        "name": "model",
+                        "updatedAt": "2023-04-25T10:24:05+02:00"
+                    })
+                    .to_string(),
+                ),
+            }];
 
-        let model_name = "Task";
+            let model_name = "Task";
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+            let fragment = parse_to_gql_fragment(model_name, property_map);
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: r#"
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: r#"
 fragment taskFields on Task {
     id
     model {
@@ -603,50 +610,50 @@ fragment taskFields on Task {
         updatedAt
     }
 }"#
-                .to_string(),
-                name: "taskFields".to_string(),
-            }
-            .minify()
-        );
-    }
+                    .to_string(),
+                    name: "taskFields".to_string(),
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_task_fragment_with_has_many_relation() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "HAS_MANY".to_string(),
-                name: "users".to_string(),
-                object_fields: None,
-            }],
-            value: Some(
-                json!([
-                  {
-                    "active": true,
-                    "casToken": "c530c3f4079a09f7804259002307b5e50c656d52",
-                    "createdAt": "2023-02-08T16:48:14+01:00",
-                    "developer": true,
-                    "email": "test@example.com",
-                    "id": 1,
-                    "locale": null,
-                    "name": "Admin Blocks",
-                    "password": "test",
-                    "readMetadata": false,
-                    "receivesNotifications": true,
-                    "updatedAt": "2023-02-08T16:48:14+01:00"
-                  }
-                ])
-                .to_string(),
-            ),
-        }];
+        #[test]
+        fn returns_task_fragment_with_has_many_relation() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "HAS_MANY".to_string(),
+                    name: "users".to_string(),
+                    object_fields: None,
+                }],
+                value: Some(
+                    json!([
+                      {
+                        "active": true,
+                        "casToken": "c530c3f4079a09f7804259002307b5e50c656d52",
+                        "createdAt": "2023-02-08T16:48:14+01:00",
+                        "developer": true,
+                        "email": "test@example.com",
+                        "id": 1,
+                        "locale": null,
+                        "name": "Admin Blocks",
+                        "password": "test",
+                        "readMetadata": false,
+                        "receivesNotifications": true,
+                        "updatedAt": "2023-02-08T16:48:14+01:00"
+                      }
+                    ])
+                    .to_string(),
+                ),
+            }];
 
-        let model_name = "Task";
+            let model_name = "Task";
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+            let fragment = parse_to_gql_fragment(model_name, property_map);
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: r#"
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: r#"
 fragment taskFields on Task {
     id
     users {
@@ -664,54 +671,54 @@ fragment taskFields on Task {
         updatedAt
     }
 }"#
-                .to_string(),
-                name: "taskFields".to_string(),
-            }
-            .minify()
-        );
-    }
+                    .to_string(),
+                    name: "taskFields".to_string(),
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_task_fragment_with_multiple_belongs_to_relations() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "BELONGS_TO".to_string(),
-                name: "information".to_string(),
-                object_fields: None,
-            }],
-            value: Some(
-                json!({
-                  "createdAt": "2023-04-26T13:12:08+02:00",
-                  "id": 1,
-                  "name": "fdsfsfd",
-                  "updatedAt": "2023-04-26T13:20:57+02:00",
-                  "user": {
-                    "active": true,
-                    "casToken": "c530c3f4079a09f7804259002307b5e50c656d52",
-                    "createdAt": "2023-02-08T16:48:14+01:00",
-                    "developer": true,
-                    "email": "test@example.com",
-                    "id": 1,
-                    "locale": null,
-                    "name": "Admin Blocks",
-                    "password": "test",
-                    "readMetadata": false,
-                    "receivesNotifications": true,
-                    "updatedAt": "2023-04-26T13:06:49+02:00"
-                  }
-                })
-                .to_string(),
-            ),
-        }];
+        #[test]
+        fn returns_task_fragment_with_multiple_belongs_to_relations() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "BELONGS_TO".to_string(),
+                    name: "information".to_string(),
+                    object_fields: None,
+                }],
+                value: Some(
+                    json!({
+                      "createdAt": "2023-04-26T13:12:08+02:00",
+                      "id": 1,
+                      "name": "fdsfsfd",
+                      "updatedAt": "2023-04-26T13:20:57+02:00",
+                      "user": {
+                        "active": true,
+                        "casToken": "c530c3f4079a09f7804259002307b5e50c656d52",
+                        "createdAt": "2023-02-08T16:48:14+01:00",
+                        "developer": true,
+                        "email": "test@example.com",
+                        "id": 1,
+                        "locale": null,
+                        "name": "Admin Blocks",
+                        "password": "test",
+                        "readMetadata": false,
+                        "receivesNotifications": true,
+                        "updatedAt": "2023-04-26T13:06:49+02:00"
+                      }
+                    })
+                    .to_string(),
+                ),
+            }];
 
-        let model_name = "Task";
+            let model_name = "Task";
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+            let fragment = parse_to_gql_fragment(model_name, property_map);
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: r#"
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: r#"
 fragment taskFields on Task {
     id
     information {
@@ -735,52 +742,52 @@ fragment taskFields on Task {
         }
     }
 }"#
-                .to_string(),
-                name: "taskFields".to_string(),
-            }
-            .minify()
-        );
-    }
+                    .to_string(),
+                    name: "taskFields".to_string(),
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_task_fragment_with_nested_belongs_to_relations() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "BELONGS_TO".to_string(),
-                name: "information".to_string(),
-                object_fields: None,
-            }],
-            value: Some(
-                json!({
-                  "createdAt": "2023-04-26T13:12:08+02:00",
-                  "id": 1,
-                  "name": "fdsfsfd",
-                  "updatedAt": "2023-04-26T13:20:57+02:00",
-                  "createdBy": {
-                    "active": true,
-                    "casToken": "c530c3f4079a09f7804259002307b5e50c656d52",
-                    "createdAt": "2023-02-08T16:48:14+01:00",
-                    "developer": true,
-                    "email": "test@example.com",
-                    "id": 1,
-                    "locale": null,
-                    "name": "Admin Blocks",
-                    "password": "test",
-                    "readMetadata": false,
-                    "receivesNotifications": true,
-                    "updatedAt": "2023-04-26T13:06:49+02:00",
-                    "department": { "id": 1, "name": "Betty" }
-                  }
-                })
-                .to_string(),
-            ),
-        }];
+        #[test]
+        fn returns_task_fragment_with_nested_belongs_to_relations() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "BELONGS_TO".to_string(),
+                    name: "information".to_string(),
+                    object_fields: None,
+                }],
+                value: Some(
+                    json!({
+                      "createdAt": "2023-04-26T13:12:08+02:00",
+                      "id": 1,
+                      "name": "fdsfsfd",
+                      "updatedAt": "2023-04-26T13:20:57+02:00",
+                      "createdBy": {
+                        "active": true,
+                        "casToken": "c530c3f4079a09f7804259002307b5e50c656d52",
+                        "createdAt": "2023-02-08T16:48:14+01:00",
+                        "developer": true,
+                        "email": "test@example.com",
+                        "id": 1,
+                        "locale": null,
+                        "name": "Admin Blocks",
+                        "password": "test",
+                        "readMetadata": false,
+                        "receivesNotifications": true,
+                        "updatedAt": "2023-04-26T13:06:49+02:00",
+                        "department": { "id": 1, "name": "Betty" }
+                      }
+                    })
+                    .to_string(),
+                ),
+            }];
 
-        let model_name = "Task";
+            let model_name = "Task";
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+            let fragment = parse_to_gql_fragment(model_name, property_map);
 
-        let expected = r#"fragment taskFields on Task {
+            let expected = r#"fragment taskFields on Task {
   id
   information {
     createdAt
@@ -808,58 +815,58 @@ fragment taskFields on Task {
   }
 }"#;
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: expected.to_string(),
-                name: "taskFields".to_string()
-            }
-            .minify()
-        );
-    }
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: expected.to_string(),
+                    name: "taskFields".to_string()
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_task_fragment_with_nested_relations_array() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "BELONGS_TO".to_string(),
-                name: "information".to_string(),
-                object_fields: None,
-            }],
-            value: Some(
-                json!({
-                  "createdAt": "2023-04-26T13:12:08+02:00",
-                  "id": 1,
-                  "name": "fdsfsfd",
-                  "updatedAt": "2023-04-26T13:20:57+02:00",
-                  "createdBy": {
-                    "active": true,
-                    "casToken": "c530c3f4079a09f7804259002307b5e50c656d52",
-                    "createdAt": "2023-02-08T16:48:14+01:00",
-                    "developer": true,
-                    "email": "test@example.com",
-                    "id": 1,
-                    "locale": null,
-                    "name": "Admin Blocks",
-                    "password": "test",
-                    "readMetadata": false,
-                    "receivesNotifications": true,
-                    "updatedAt": "2023-04-26T13:06:49+02:00",
-                    "department": { "id": 1, "name": "Betty" },
-                    "roles": [
-                      { "id": 1, "name": "Admin" },
-                      { "id": 2, "name": "Developer" }
-                    ]
-                  }
-                })
-                .to_string(),
-            ),
-        }];
-        let model_name = "Task";
+        #[test]
+        fn returns_task_fragment_with_nested_relations_array() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "BELONGS_TO".to_string(),
+                    name: "information".to_string(),
+                    object_fields: None,
+                }],
+                value: Some(
+                    json!({
+                      "createdAt": "2023-04-26T13:12:08+02:00",
+                      "id": 1,
+                      "name": "fdsfsfd",
+                      "updatedAt": "2023-04-26T13:20:57+02:00",
+                      "createdBy": {
+                        "active": true,
+                        "casToken": "c530c3f4079a09f7804259002307b5e50c656d52",
+                        "createdAt": "2023-02-08T16:48:14+01:00",
+                        "developer": true,
+                        "email": "test@example.com",
+                        "id": 1,
+                        "locale": null,
+                        "name": "Admin Blocks",
+                        "password": "test",
+                        "readMetadata": false,
+                        "receivesNotifications": true,
+                        "updatedAt": "2023-04-26T13:06:49+02:00",
+                        "department": { "id": 1, "name": "Betty" },
+                        "roles": [
+                          { "id": 1, "name": "Admin" },
+                          { "id": 2, "name": "Developer" }
+                        ]
+                      }
+                    })
+                    .to_string(),
+                ),
+            }];
+            let model_name = "Task";
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+            let fragment = parse_to_gql_fragment(model_name, property_map);
 
-        let expected = r#"
+            let expected = r#"
 fragment taskFields on Task {
   id
   information {
@@ -892,150 +899,157 @@ fragment taskFields on Task {
   }
 }"#;
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: expected.to_string(),
-                name: "taskFields".to_string()
-            }
-            .minify()
-        );
-    }
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: expected.to_string(),
+                    name: "taskFields".to_string()
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_task_fragment_belongs_to_by_id() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "BELONGS_TO".to_string(),
-                name: "model".to_string(),
-                object_fields: None,
-            }],
-            value: Some("1".to_string()),
-        }];
+        #[test]
+        fn returns_task_fragment_belongs_to_by_id() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "BELONGS_TO".to_string(),
+                    name: "model".to_string(),
+                    object_fields: None,
+                }],
+                value: Some("1".to_string()),
+            }];
 
-        let model_name = "Task";
+            let model_name = "Task";
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+            let fragment = parse_to_gql_fragment(model_name, property_map);
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: r#"
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: r#"
 fragment taskFields on Task {
     id
     model {
         id
     }
 }"#
-                .to_string(),
-                name: "taskFields".to_string(),
-            }
-            .minify()
-        );
-    }
+                    .to_string(),
+                    name: "taskFields".to_string(),
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_task_fragment_has_many_by_id() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "HAS_MANY".to_string(),
-                name: "users".to_string(),
-                object_fields: None,
-            }],
-            value: None,
-        }];
-        let model_name = "Task";
+        #[test]
+        fn returns_task_fragment_has_many_by_id() {
+            let property_map = vec![PropertyMap {
+                key: vec![PropertyKey {
+                    kind: "HAS_MANY".to_string(),
+                    name: "users".to_string(),
+                    object_fields: None,
+                }],
+                value: None,
+            }];
+            let model_name = "Task";
 
-        let fragment = parse_to_gql_fragment(model_name, property_map);
+            let fragment = parse_to_gql_fragment(model_name, property_map);
 
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: r#"
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: r#"
 fragment taskFields on Task {
     id
     users {
         id
     }
 }"#
-                .to_string(),
-                name: "taskFields".to_string(),
-            }
-            .minify()
-        );
-    }
+                    .to_string(),
+                    name: "taskFields".to_string(),
+                }
+                .minify()
+            );
+        }
 
-    #[test]
-    fn returns_empty_when_model_missing() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "STRING".to_string(),
-                name: "name".to_string(),
-                object_fields: None,
-            }],
-            value: None,
-        }];
-
-        let model_name = "";
-
-        let fragment = parse_to_gql_fragment(model_name, property_map);
-
-        assert_eq!(
-            fragment.minify(),
-            GraphQL {
-                gql: "".to_string(),
-                name: "".to_string()
-            }
-            .minify()
-        );
-    }
-
-    #[test]
-    fn parse_assigned_propertie_should_create_simple_input_variables() {
-        let property_map = vec![PropertyMap {
-            key: vec![PropertyKey {
-                kind: "STRING".to_string(),
-                name: "name".to_string(),
-                object_fields: None,
-            }],
-            value: Some("New Task".to_string()),
-        }];
-
-        let assigned_properties = parse_assigned_properties(property_map);
-        let expected_result: serde_json::Value = json!({ "name": "New Task" });
-        assert_eq!(assigned_properties, expected_result,);
-    }
-
-    #[test]
-    fn parse_assigned_propertie_should_create_nested_input_variables() {
-        let property_map = vec![
-            PropertyMap {
+        #[test]
+        fn returns_empty_when_model_missing() {
+            let property_map = vec![PropertyMap {
                 key: vec![PropertyKey {
                     kind: "STRING".to_string(),
                     name: "name".to_string(),
                     object_fields: None,
                 }],
-                value: Some("test".to_string()),
-            },
-            PropertyMap {
+                value: None,
+            }];
+
+            let model_name = "";
+
+            let fragment = parse_to_gql_fragment(model_name, property_map);
+
+            assert_eq!(
+                fragment.minify(),
+                GraphQL {
+                    gql: "".to_string(),
+                    name: "".to_string()
+                }
+                .minify()
+            );
+        }
+    }
+
+    mod parse_assigned_properties {
+        use serde_json::json;
+
+        use super::*;
+
+        #[test]
+        fn parse_assigned_propertie_should_create_simple_input_variables() {
+            let property_map = vec![PropertyMap {
                 key: vec![PropertyKey {
-                    kind: "HAS_MANY".to_string(),
-                    name: "abilities".to_string(),
+                    kind: "STRING".to_string(),
+                    name: "name".to_string(),
                     object_fields: None,
                 }],
-                value: Some(
-                    serde_json::json!([
-                        {"name": "Tackle"},
-                    ])
-                    .to_string(),
-                ),
-            },
-        ];
+                value: Some("New Task".to_string()),
+            }];
 
-        let assigned_properties = parse_assigned_properties(property_map);
-        let expected_result: serde_json::Value =
-            json!({ "name": "test", "abilities": [{"name": "Tackle"}] });
-        assert_eq!(assigned_properties, expected_result,);
+            let assigned_properties = parse_assigned_properties(property_map);
+            let expected_result: serde_json::Value = json!({ "name": "New Task" });
+            assert_eq!(assigned_properties, expected_result,);
+        }
+
+        #[test]
+        fn parse_assigned_propertie_should_create_nested_input_variables() {
+            let property_map = vec![
+                PropertyMap {
+                    key: vec![PropertyKey {
+                        kind: "STRING".to_string(),
+                        name: "name".to_string(),
+                        object_fields: None,
+                    }],
+                    value: Some("test".to_string()),
+                },
+                PropertyMap {
+                    key: vec![PropertyKey {
+                        kind: "HAS_MANY".to_string(),
+                        name: "abilities".to_string(),
+                        object_fields: None,
+                    }],
+                    value: Some(
+                        serde_json::json!([
+                            {"name": "Tackle"},
+                        ])
+                        .to_string(),
+                    ),
+                },
+            ];
+
+            let assigned_properties = parse_assigned_properties(property_map);
+            let expected_result: serde_json::Value =
+                json!({ "name": "test", "abilities": [{"name": "Tackle"}] });
+            assert_eq!(assigned_properties, expected_result,);
+        }
     }
 
     #[test]
@@ -1101,5 +1115,27 @@ mutation ($id: Int!) {
             get_record_id(&request_result, mutation_name),
             Ok("uuid".to_string())
         );
+    }
+
+    #[test]
+    fn create_fetch_record_query_should_create_the_correct_query() {
+        let model_name = "createuser";
+        let query_name = format!("one{model_name}");
+        let fragment = GraphQL {
+            gql: "empty".to_string(),
+            name: "createuser".to_string(),
+        }
+        .minify();
+
+        let expected_result = r#"empty
+        query($where: createuserFilterInput) {
+            onecreateuser(where: $where) {
+                ...createuser
+            }
+        }"#;
+
+        let result = create_fetch_record_query(model_name, &query_name, &fragment);
+
+        assert_eq!(result, expected_result);
     }
 }
