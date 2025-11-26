@@ -1,3 +1,15 @@
+# [1.2.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.6...v1.2.0) (2025-11-26)
+
+
+### Bug Fixes
+
+* fix clippy findings and failing test ([9f8be8d](https://github.com/bettyblocks/wasm-base-components/commit/9f8be8d45c57e72ab5da3987e988c48b74dbb63e))
+
+
+### Features
+
+* add data api component helper ([919b893](https://github.com/bettyblocks/wasm-base-components/commit/919b893b4dee43363f73ba2fdd2447d0cb51ad0f))
+
 ## [1.1.6](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.5...v1.1.6) (2025-11-06)
 
 
