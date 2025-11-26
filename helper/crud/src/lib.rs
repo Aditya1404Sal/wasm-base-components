@@ -480,6 +480,9 @@ impl Guest for CrudComponent {
 
 export!(CrudComponent);
 
+// TODO:
+// Use mod blocks to scope the function tests
+// i.e. a mod block for each function
 #[cfg(test)]
 mod tests {
 
