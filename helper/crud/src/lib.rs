@@ -1131,11 +1131,11 @@ mutation ($id: Int!) {
         .minify();
 
         let expected_result = r#"empty
-        query($where: createuserFilterInput) {{
-            onecreateuser(where: $where) {{
+        query($where: createuserFilterInput) {
+            onecreateuser(where: $where) {
                 ...createuser
-            }}
-        }}"#;
+            }
+        }"#;
 
         let result = create_fetch_record_query(model_name, &query_name, &fragment);
 
