@@ -245,7 +245,7 @@ jobs:
           echo "### WASM Components:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -f helper/crudbuild/crud_component.wasm ]; then
+          if [ -f helper/crud/build/crud_component.wasm ]; then
             echo "- ✅ **crud-component**" >> $GITHUB_STEP_SUMMARY
             echo "  - \`${REGISTRY}/${REPO_OWNER}/crud-component:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
             echo "  - \`${REGISTRY}/${REPO_OWNER}/crud-component:latest\`" >> $GITHUB_STEP_SUMMARY
