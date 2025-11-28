@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/bettyblocks/wasm-base-components/compare/v1.2.0...v1.2.1) (2025-11-28)
+
+
+### Bug Fixes
+
+* type in path to crud component ([76bfad0](https://github.com/bettyblocks/wasm-base-components/commit/76bfad080119851b11452f5b12c4645483a972af))
+
 # [1.2.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.1.6...v1.2.0) (2025-11-26)
 
 
