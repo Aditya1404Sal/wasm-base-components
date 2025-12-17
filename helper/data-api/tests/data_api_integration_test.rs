@@ -230,7 +230,7 @@ async fn data_api_component_should_return_data_rpc_server_error() -> anyhow::Res
         .send()
         .await?;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let result: serde_json::Value = response.json().await?;
 
@@ -279,7 +279,7 @@ async fn data_api_component_should_return_error_if_token_is_invalid() -> anyhow:
         .send()
         .await?;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let result: serde_json::Value = response.json().await?;
 
