@@ -18,6 +18,9 @@ use crate::data_grpc::{Context as GrpcContext, DataApiResult};
 
 wit_bindgen::generate!({ generate_all });
 
+const STATUS_ERROR: i32 = Status::Error as i32;
+const STATUS_OK: i32 = Status::Ok as i32;
+
 struct Config {
     grpc_server_uri: String,
     jaws_issuer: String,
@@ -101,9 +104,6 @@ async fn inner_request(
 
     debug!("Executing gRPC request");
     let response = client.execute(request).await.context("gRPC call failed")?;
-
-    const STATUS_ERROR: i32 = Status::Error as i32;
-    const STATUS_OK: i32 = Status::Ok as i32;
 
     match response.into_inner() {
         DataApiResult {

@@ -2,11 +2,6 @@
 build:
     wash build
 
-build-test:
-    cargo build --manifest-path test-component/Cargo.toml --target wasm32-wasip2 --release
-    cargo build --target wasm32-wasip2 --release
-    cargo build --tests
-
 test:
     cargo test --lib --bins
 
