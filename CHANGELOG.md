@@ -1,3 +1,13 @@
+## [1.2.2](https://github.com/bettyblocks/wasm-base-components/compare/v1.2.1...v1.2.2) (2025-12-23)
+
+
+### Bug Fixes
+
+* rebuild wasm component when changed ([88754de](https://github.com/bettyblocks/wasm-base-components/commit/88754de2b2936db610d9d102ac72aef2ac9827f9))
+* release ([857bb7f](https://github.com/bettyblocks/wasm-base-components/commit/857bb7f4e7bbe1498f7e702e2705a5b419e17b07))
+* use GH_TOKEN because of protected branches ([2c13a7c](https://github.com/bettyblocks/wasm-base-components/commit/2c13a7cafacbb3f759d9387dba9e18d2492287d8))
+* when data-api returns an error propagate the error ([092a85e](https://github.com/bettyblocks/wasm-base-components/commit/092a85e3d6883038dc7fcc56852c1023d087e17a))
+
 ## [1.2.1](https://github.com/bettyblocks/wasm-base-components/compare/v1.2.0...v1.2.1) (2025-11-28)
 
 
