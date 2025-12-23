@@ -16,6 +16,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Cache Rust registry
         uses: actions/cache@v4
         with:
