@@ -5,6 +5,7 @@ use tonic::Request;
 use tracing::debug;
 use wasmcloud_grpc_client::GrpcEndpoint;
 
+use crate::data_grpc::data_api_result::Status;
 use crate::exports::betty_blocks::data_api::data_api::{Guest, HelperContext};
 
 pub mod data_grpc {
@@ -12,10 +13,13 @@ pub mod data_grpc {
 }
 
 use crate::data_grpc::data_api_client::DataApiClient;
-use crate::data_grpc::Context as GrpcContext;
 use crate::data_grpc::DataApiRequest;
+use crate::data_grpc::{Context as GrpcContext, DataApiResult};
 
 wit_bindgen::generate!({ generate_all });
+
+const STATUS_ERROR: i32 = Status::Error as i32;
+const STATUS_OK: i32 = Status::Ok as i32;
 
 struct Config {
     grpc_server_uri: String,
@@ -101,9 +105,17 @@ async fn inner_request(
     debug!("Executing gRPC request");
     let response = client.execute(request).await.context("gRPC call failed")?;
 
-    let message = response.into_inner().result;
-    debug!("Successfully received gRPC response");
-    Ok(message)
+    match response.into_inner() {
+        DataApiResult {
+            status: STATUS_OK,
+            result,
+        } => Ok(result),
+        DataApiResult {
+            status: STATUS_ERROR,
+            result,
+        } => Err(anyhow::anyhow!(result)),
+        DataApiResult { .. } => unreachable!(),
+    }
 }
 
 fn generate_jaws(config: &Config, application_id: String) -> anyhow::Result<String> {

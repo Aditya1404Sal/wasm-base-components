@@ -12,6 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if is_test_build {
         println!("cargo:warning=Building WASM component for tests…");
+        println!("cargo::rerun-if-changed=test-component/src/lib.rs");
+        println!("cargo::rerun-if-changed=src/lib.rs");
 
         let status = Command::new("cargo")
             .args(["build", "--target", "wasm32-wasip2", "--release"])

@@ -73,7 +73,11 @@ fn inner_handle(request: http::IncomingRequest) -> Result<http::Response<String>
     let result = data_api_request(&helper_context, &query, &variables);
     match result {
         Ok(response) => Ok(http::Response::new(response)),
-        Err(e) => Ok(http::Response::new(e)),
+        Err(e) => {
+            let mut response = http::Response::new(e);
+            *response.status_mut() = http::StatusCode::BAD_REQUEST;
+            Ok(response)
+        },
     }
 }
 
