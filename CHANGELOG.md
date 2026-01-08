@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.2.2...v1.3.0) (2026-01-08)
+
+
+### Features
+
+* add configurations to payload ([c5548df](https://github.com/bettyblocks/wasm-base-components/commit/c5548dfc47bd92257f82655738646288473d1a0c))
+
 ## [1.2.2](https://github.com/bettyblocks/wasm-base-components/compare/v1.2.1...v1.2.2) (2025-12-23)
 
 
