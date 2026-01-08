@@ -11,6 +11,7 @@ struct Component;
 #[derive(serde::Deserialize, Debug)]
 struct PayloadWrapper {
     input: String,
+    configurations: String,
 }
 #[derive(serde::Deserialize, Debug)]
 struct InputWrapper {
@@ -68,6 +69,7 @@ fn inner_handle(request: http::IncomingRequest) -> Result<http::Response<String>
         action_id: input_wrapper.action_id,
         payload: Payload {
             input: input_wrapper.payload.input,
+            configurations: input_wrapper.payload.configurations,
         },
     };
 

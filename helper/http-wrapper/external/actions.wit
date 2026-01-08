@@ -5,6 +5,7 @@ interface actions {
 
    record payload {
       input: json-string,
+      configurations: json-string,
    }
 
    record input {
