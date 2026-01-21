@@ -122,7 +122,6 @@ impl From<Error> for http::Response<String> {
 }
 
 fn inner_handle<F>(
-    // request: http::IncomingRequest,
     request: impl IncomingRequestImpl,
     call_function: F,
 ) -> Result<http::Response<String>, Error>
@@ -288,7 +287,6 @@ mod tests {
             }
         );
 
-
         let input = InputWrapper {
             action_id: String::from("951e9a1360bc44d8a28943ab94d461be"),
             payload: PayloadWrapper {
@@ -337,7 +335,10 @@ mod tests {
 
         let response = http::Response::from(Error::InputTooLarge(16781312));
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(response.body(), "Body size exceeded the maximum 16.004mb > 16mb");
+        assert_eq!(
+            response.body(),
+            "Body size exceeded the maximum 16.004mb > 16mb"
+        );
 
         let response = http::Response::from(Error::ActionCallFailed("it broke :(".to_string()));
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
