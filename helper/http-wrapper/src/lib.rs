@@ -25,13 +25,13 @@ struct InputWrapper {
     payload: PayloadWrapper,
 }
 
-impl Into<Input> for InputWrapper {
-    fn into(self) -> Input {
+impl From<InputWrapper> for Input {
+    fn from(val: InputWrapper) -> Self {
         Input {
-            action_id: self.action_id,
+            action_id: val.action_id,
             payload: Payload {
-                input: self.payload.input,
-                configurations: self.payload.configurations,
+                input: val.payload.input,
+                configurations: val.payload.configurations,
             },
         }
     }
@@ -64,7 +64,7 @@ impl IncomingRequestImpl for http::IncomingRequest {
 
 impl IncomingBodyImpl for IncomingBody {
     fn subscribe(&self) -> impl PollableImpl {
-        InputStream::subscribe(&self)
+        InputStream::subscribe(self)
     }
     fn read(&self, max_amount: u64) -> Result<Vec<u8>, streams::StreamError> {
         InputStream::read(self, max_amount)
@@ -250,9 +250,9 @@ mod tests {
                 action_input.payload.configurations,
                 input.payload.configurations
             );
-            return Ok(Output {
+            Ok(Output {
                 result: String::from("done"),
-            });
+            })
         };
 
         let request = TestIncomingRequest {
@@ -303,9 +303,9 @@ mod tests {
                 action_input.payload.configurations,
                 input.payload.configurations
             );
-            return Ok(Output {
+            Ok(Output {
                 result: String::from("done"),
-            });
+            })
         };
 
         let request = TestIncomingRequest {
