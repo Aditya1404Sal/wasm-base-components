@@ -230,7 +230,6 @@ mod tests {
             },
         };
 
-        std::fs::write("mega.json", serde_json::to_vec(&input).unwrap()).ok();
         assert!(serde_json::to_vec(&input).unwrap().len() as u64 > MAX_READ);
 
         let test_action = |action_input: &Input| -> Result<Output, String> {
