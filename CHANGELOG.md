@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/bettyblocks/wasm-base-components/compare/v1.3.1...v1.3.2) (2026-01-22)
+
+
+### Bug Fixes
+
+* use serde_json from reader to fix loading the input ([e57a7ff](https://github.com/bettyblocks/wasm-base-components/commit/e57a7ffc2374d3a3ebe34b0af85dee274fa29891))
+
 ## [1.3.1](https://github.com/bettyblocks/wasm-base-components/compare/v1.3.0...v1.3.1) (2026-01-22)
 
 
