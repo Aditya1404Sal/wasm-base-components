@@ -1,8 +1,6 @@
-use wasmcloud_component::wasi::io::streams;
-use wasmcloud_component::{
-    http::{self, IncomingBody},
-    wasi::io::{poll::Pollable, streams::InputStream},
-};
+use std::io::Read;
+
+use wasmcloud_component::http::{self, IncomingBody};
 
 pub mod bindings {
     wit_bindgen::generate!({ generate_all });
@@ -44,49 +42,28 @@ const MAX_READ: u64 = MAX_READ_MB * MEGABYTE;
 
 trait IncomingRequestImpl {
     fn method(&self) -> &http::Method;
-    fn body(&self) -> &impl IncomingBodyImpl;
+    fn body_mut(&mut self) -> &mut impl IncomingBodyImpl;
 }
 
-trait IncomingBodyImpl {
-    fn subscribe(&self) -> impl PollableImpl;
-    fn read(&self, max_amount: u64) -> Result<Vec<u8>, streams::StreamError>;
-}
+trait IncomingBodyImpl: std::io::Read {}
 
 impl IncomingRequestImpl for http::IncomingRequest {
     fn method(&self) -> &http::Method {
         http::IncomingRequest::method(self)
     }
 
-    fn body(&self) -> &impl IncomingBodyImpl {
-        http::IncomingRequest::body(self)
+    fn body_mut(&mut self) -> &mut impl IncomingBodyImpl {
+        http::IncomingRequest::body_mut(self)
     }
 }
 
-impl IncomingBodyImpl for IncomingBody {
-    fn subscribe(&self) -> impl PollableImpl {
-        InputStream::subscribe(self)
-    }
-    fn read(&self, max_amount: u64) -> Result<Vec<u8>, streams::StreamError> {
-        InputStream::read(self, max_amount)
-    }
-}
-
-trait PollableImpl {
-    fn block(&self);
-}
-
-impl PollableImpl for Pollable {
-    fn block(&self) {
-        Pollable::block(self)
-    }
-}
+impl IncomingBodyImpl for IncomingBody {}
 
 #[derive(Debug, PartialEq)]
 enum Error {
     InvalidBody(String),
     InvalidInput(String),
-    InputTooLarge(u64),
-    FailedToReadBody(String),
+    InputTooLarge,
     ActionCallFailed(String),
     HealthCheckFailed(String),
 }
@@ -100,17 +77,10 @@ impl From<Error> for http::Response<String> {
             Error::InvalidInput(message) => {
                 http::Response::builder().status(400).body(message).unwrap()
             }
-            Error::InputTooLarge(amount_in_bytes) => http::Response::builder()
+            Error::InputTooLarge => http::Response::builder()
                 .status(400)
-                .body(format!(
-                    "Body size exceeded the maximum {:.3}mb > {}mb",
-                    (amount_in_bytes as f32) / (MEGABYTE as f32),
-                    MAX_READ_MB
-                ))
+                .body(format!("Body size exceeded the maximum of {MAX_READ_MB}mb"))
                 .unwrap(),
-            Error::FailedToReadBody(message) => {
-                http::Response::builder().status(500).body(message).unwrap()
-            }
             Error::ActionCallFailed(message) => {
                 http::Response::builder().status(400).body(message).unwrap()
             }
@@ -122,7 +92,7 @@ impl From<Error> for http::Response<String> {
 }
 
 fn inner_handle<F>(
-    request: impl IncomingRequestImpl,
+    mut request: impl IncomingRequestImpl,
     call_function: F,
 ) -> Result<http::Response<String>, Error>
 where
@@ -134,28 +104,14 @@ where
         return Ok(http::Response::new(health_status));
     }
 
-    let body = request.body();
+    let body = request.body_mut();
+    let reader = body.take(MAX_READ);
 
-    body.subscribe().block();
-
-    // maybe we can use read_to_end, but that doesn't have a max size
-    let mut body_bytes = Vec::new();
-    loop {
-        let chunk = body
-            .read(MAX_READ)
-            .map_err(|e| Error::FailedToReadBody(e.to_string()))?;
-        if chunk.is_empty() {
-            break;
-        }
-        if (body_bytes.len() as u64) > MAX_READ {
-            return Err(Error::InputTooLarge(body_bytes.len() as u64));
-        }
-        body_bytes.extend_from_slice(&chunk);
-    }
-
-    let input_wrapper = serde_json::from_slice::<InputWrapper>(&body_bytes).map_err(|e| {
-        if e.is_eof() || e.is_io() {
+    let input_wrapper = serde_json::from_reader::<_, InputWrapper>(reader).map_err(|e| {
+        if e.is_io() {
             Error::InvalidBody(e.to_string())
+        } else if e.is_eof() {
+            Error::InputTooLarge
         } else {
             Error::InvalidInput(e.to_string())
         }
@@ -182,7 +138,7 @@ http::export!(Component);
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicUsize;
+    use std::io::Cursor;
 
     use wasmcloud_component::http::StatusCode;
 
@@ -193,45 +149,26 @@ mod tests {
     }
 
     struct TestIncomingRequestBody {
-        data: Vec<u8>,
-        already_read: AtomicUsize,
-        chunk_size: usize,
+        cursor: Cursor<Vec<u8>>,
     }
-
-    struct TestPollable {}
 
     impl IncomingRequestImpl for TestIncomingRequest {
         fn method(&self) -> &http::Method {
             &http::Method::POST
         }
 
-        fn body(&self) -> &impl IncomingBodyImpl {
-            &self.body
+        fn body_mut(&mut self) -> &mut impl IncomingBodyImpl {
+            &mut self.body
         }
     }
 
-    impl IncomingBodyImpl for TestIncomingRequestBody {
-        fn subscribe(&self) -> impl PollableImpl {
-            TestPollable {}
-        }
-
-        fn read(&self, _: u64) -> Result<Vec<u8>, streams::StreamError> {
-            let from = self
-                .already_read
-                .fetch_add(self.chunk_size, std::sync::atomic::Ordering::Relaxed);
-            let until = (from + self.chunk_size).min(self.data.len());
-            let chunk = if let Some(chunk) = self.data.get(from..until) {
-                chunk.to_vec()
-            } else {
-                Vec::new()
-            };
-            Ok(chunk)
+    impl std::io::Read for TestIncomingRequestBody {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.cursor.read(buf)
         }
     }
 
-    impl PollableImpl for TestPollable {
-        fn block(&self) {}
-    }
+    impl IncomingBodyImpl for TestIncomingRequestBody {}
 
     #[test]
     fn handles_loading_the_input_in_chunks() {
@@ -257,9 +194,7 @@ mod tests {
 
         let request = TestIncomingRequest {
             body: TestIncomingRequestBody {
-                data: serde_json::to_vec(&input).unwrap(),
-                already_read: AtomicUsize::new(0),
-                chunk_size: 2,
+                cursor: Cursor::new(serde_json::to_vec(&input).unwrap()),
             },
         };
         let response = inner_handle(request, test_action).unwrap();
@@ -294,6 +229,8 @@ mod tests {
                 configurations: serde_json::Value::Object(Default::default()).to_string(),
             },
         };
+
+        std::fs::write("mega.json", serde_json::to_vec(&input).unwrap()).ok();
         assert!(serde_json::to_vec(&input).unwrap().len() as u64 > MAX_READ);
 
         let test_action = |action_input: &Input| -> Result<Output, String> {
@@ -310,13 +247,11 @@ mod tests {
 
         let request = TestIncomingRequest {
             body: TestIncomingRequestBody {
-                data: serde_json::to_vec(&input).unwrap(),
-                already_read: AtomicUsize::new(0),
-                chunk_size: 4096,
+                cursor: Cursor::new(serde_json::to_vec(&input).unwrap()),
             },
         };
         let response = inner_handle(request, test_action).unwrap_err();
-        assert_eq!(response, Error::InputTooLarge(16781312));
+        assert_eq!(response, Error::InputTooLarge);
     }
 
     #[test]
@@ -329,16 +264,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(response.body(), "it broke :(");
 
-        let response = http::Response::from(Error::FailedToReadBody("it broke :(".to_string()));
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(response.body(), "it broke :(");
-
-        let response = http::Response::from(Error::InputTooLarge(16781312));
+        let response = http::Response::from(Error::InputTooLarge);
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(
-            response.body(),
-            "Body size exceeded the maximum 16.004mb > 16mb"
-        );
+        assert_eq!(response.body(), "Body size exceeded the maximum of 16mb");
 
         let response = http::Response::from(Error::ActionCallFailed("it broke :(".to_string()));
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
