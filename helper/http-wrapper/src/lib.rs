@@ -7,7 +7,9 @@ pub mod bindings {
 }
 
 use crate::bindings::betty_blocks::actions::actions::{call, health};
-use crate::bindings::betty_blocks::types::types::{Error as ActionError, Input, Output, Payload};
+use crate::bindings::betty_blocks::types::types::{
+    Error as ActionError, RunInput as Input, RunOutput as Output, RunPayload as Payload,
+};
 
 struct Component;
 
@@ -124,7 +126,7 @@ where
 
     let input = input_wrapper.into();
     let result = call_function(&input).map_err(|action_error| match action_error {
-        ActionError::Ok => Error::ActionCallFailed("Action call failed".to_string()),
+        ActionError::RunFailed(msg) => Error::ActionCallFailed(msg),
         ActionError::Forbidden => Error::Forbidden("Action forbidden".to_string()),
     })?;
 
@@ -315,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn test_action_returns_ok_error() {
+    fn test_action_returns_run_failed() {
         let input = InputWrapper {
             action_id: String::from("951e9a1360bc44d8a28943ab94d461be"),
             payload: PayloadWrapper {
@@ -324,7 +326,9 @@ mod tests {
             },
         };
 
-        let test_action = |_: &Input| -> Result<Output, ActionError> { Err(ActionError::Ok) };
+        let test_action = |_: &Input| -> Result<Output, ActionError> {
+            Err(ActionError::RunFailed("Custom error message".to_string()))
+        };
 
         let request = TestIncomingRequest {
             body: TestIncomingRequestBody {
@@ -335,7 +339,7 @@ mod tests {
 
         assert!(matches!(result, Err(Error::ActionCallFailed(_))));
         if let Err(Error::ActionCallFailed(msg)) = result {
-            assert_eq!(msg, "Action call failed");
+            assert_eq!(msg, "Custom error message");
         }
     }
 }

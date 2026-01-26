@@ -1,9 +1,9 @@
 package betty-blocks:actions;
 
 interface actions {
-  use betty-blocks:types/types.{input, output, error};
+  use betty-blocks:types/types.{run-input, run-output, error};
 
-  call: func(input: input) -> result<output, error>;
+  call: func(input: run-input) -> result<run-output, error>;
 
   health: func() -> result<string, string>;
 }

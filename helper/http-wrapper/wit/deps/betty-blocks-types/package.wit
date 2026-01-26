@@ -3,17 +3,17 @@ package betty-blocks:types;
 interface types {
   type json-string = string;
 
-  record payload {
+  record run-payload {
     input: json-string,
     configurations: json-string,
   }
 
-  record input {
+  record run-input {
     action-id: string,
-    payload: payload,
+    payload: run-payload,
   }
 
-  record output {
+  record run-output {
     %result: json-string,
   }
 
@@ -36,8 +36,8 @@ interface types {
     value: option<json-string>,
   }
 
-  enum error {
-    ok,
+  variant error {
+    run-failed(string),
     forbidden,
   }
 
