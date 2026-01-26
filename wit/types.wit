@@ -36,5 +36,10 @@ interface types {
       value: option<json-string>
    }
 
+   enum error {
+      ok,
+      forbidden,
+   }
+
    type property-mapping = list<property-map>;
 }

@@ -7,7 +7,7 @@ pub mod bindings {
 }
 
 use crate::bindings::betty_blocks::actions::actions::{call, health};
-use crate::bindings::betty_blocks::types::types::{Input, Output, Payload};
+use crate::bindings::betty_blocks::types::types::{Error as ActionError, Input, Output, Payload};
 
 struct Component;
 
@@ -67,6 +67,7 @@ enum Error {
     InputTooLarge,
     ActionCallFailed(String),
     HealthCheckFailed(String),
+    Forbidden(String),
 }
 
 impl From<Error> for http::Response<String> {
@@ -86,7 +87,10 @@ impl From<Error> for http::Response<String> {
                 http::Response::builder().status(400).body(message).unwrap()
             }
             Error::HealthCheckFailed(message) => {
-                http::Response::builder().status(400).body(message).unwrap()
+                http::Response::builder().status(503).body(message).unwrap()
+            }
+            Error::Forbidden(message) => {
+                http::Response::builder().status(403).body(message).unwrap()
             }
         }
     }
@@ -97,7 +101,7 @@ fn inner_handle<F>(
     call_function: F,
 ) -> Result<http::Response<String>, Error>
 where
-    F: for<'a> FnOnce(&'a Input) -> Result<Output, String>,
+    F: for<'a> FnOnce(&'a Input) -> Result<Output, ActionError>,
 {
     // Use GET for health checks because cant define multiple paths in wadm in kubernetes
     if request.method() == http::Method::GET {
@@ -119,7 +123,10 @@ where
     })?;
 
     let input = input_wrapper.into();
-    let result = call_function(&input).map_err(Error::ActionCallFailed)?;
+    let result = call_function(&input).map_err(|action_error| match action_error {
+        ActionError::Ok => Error::ActionCallFailed("Action call failed".to_string()),
+        ActionError::Forbidden => Error::Forbidden("Action forbidden".to_string()),
+    })?;
 
     Ok(http::Response::new(result.result))
 }
@@ -181,7 +188,7 @@ mod tests {
             },
         };
 
-        let test_action = |action_input: &Input| -> Result<Output, String> {
+        let test_action = |action_input: &Input| -> Result<Output, ActionError> {
             assert_eq!(action_input.action_id, input.action_id);
             assert_eq!(action_input.payload.input, input.payload.input);
             assert_eq!(
@@ -233,7 +240,7 @@ mod tests {
 
         assert!(serde_json::to_vec(&input).unwrap().len() as u64 > MAX_READ);
 
-        let test_action = |action_input: &Input| -> Result<Output, String> {
+        let test_action = |action_input: &Input| -> Result<Output, ActionError> {
             assert_eq!(action_input.action_id, input.action_id);
             assert_eq!(action_input.payload.input, input.payload.input);
             assert_eq!(
@@ -273,7 +280,62 @@ mod tests {
         assert_eq!(response.body(), "it broke :(");
 
         let response = http::Response::from(Error::HealthCheckFailed("it broke :(".to_string()));
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(response.body(), "it broke :(");
+
+        let response = http::Response::from(Error::Forbidden("it broke :(".to_string()));
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(response.body(), "it broke :(");
+    }
+
+    #[test]
+    fn test_action_returns_forbidden() {
+        let input = InputWrapper {
+            action_id: String::from("951e9a1360bc44d8a28943ab94d461be"),
+            payload: PayloadWrapper {
+                input: serde_json::Value::Object(Default::default()).to_string(),
+                configurations: serde_json::Value::Object(Default::default()).to_string(),
+            },
+        };
+
+        let test_action =
+            |_: &Input| -> Result<Output, ActionError> { Err(ActionError::Forbidden) };
+
+        let request = TestIncomingRequest {
+            body: TestIncomingRequestBody {
+                cursor: Cursor::new(serde_json::to_vec(&input).unwrap()),
+            },
+        };
+        let result = inner_handle(request, test_action);
+
+        assert!(matches!(result, Err(Error::Forbidden(_))));
+        if let Err(Error::Forbidden(msg)) = result {
+            assert_eq!(msg, "Action forbidden");
+        }
+    }
+
+    #[test]
+    fn test_action_returns_ok_error() {
+        let input = InputWrapper {
+            action_id: String::from("951e9a1360bc44d8a28943ab94d461be"),
+            payload: PayloadWrapper {
+                input: serde_json::Value::Object(Default::default()).to_string(),
+                configurations: serde_json::Value::Object(Default::default()).to_string(),
+            },
+        };
+
+        let test_action = |_: &Input| -> Result<Output, ActionError> { Err(ActionError::Ok) };
+
+        let request = TestIncomingRequest {
+            body: TestIncomingRequestBody {
+                cursor: Cursor::new(serde_json::to_vec(&input).unwrap()),
+            },
+        };
+        let result = inner_handle(request, test_action);
+
+        assert!(matches!(result, Err(Error::ActionCallFailed(_))));
+        if let Err(Error::ActionCallFailed(msg)) = result {
+            assert_eq!(msg, "Action call failed");
+        }
     }
 }
