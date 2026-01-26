@@ -6,7 +6,7 @@ use tracing::debug;
 use wasmcloud_grpc_client::GrpcEndpoint;
 
 use crate::data_grpc::data_api_result::Status;
-use crate::exports::betty_blocks::data_api::data_api::{Guest, HelperContext};
+use crate::exports::betty_blocks::data_api::data_api::{Context as HelperContext, Guest};
 
 pub mod data_grpc {
     tonic::include_proto!("data_grpc");

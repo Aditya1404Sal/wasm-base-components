@@ -1,9 +1,9 @@
 wit_bindgen::generate!({ generate_all });
 
 use crate::betty_blocks::data_api::data_api::request;
-use crate::exports::betty_blocks::crud::crud::{
-    Guest, HelperContext, JsonString, Model, ObjectField, PropertyKey, PropertyMap, PropertyMapping,
-};
+use crate::betty_blocks::data_api::data_api::Context as HelperContext;
+use crate::betty_blocks::types::types::{ObjectField, PropertyKey, PropertyMap};
+use crate::exports::betty_blocks::crud::crud::{Guest, JsonString, Model, PropertyMapping};
 
 #[derive(Debug, PartialEq)]
 enum PropertyKind {

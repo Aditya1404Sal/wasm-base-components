@@ -1,0 +1,10 @@
+package betty-blocks:actions;
+
+interface actions {
+  use betty-blocks:types/types.{input, output};
+
+  call: func(input: input) -> result<output, string>;
+
+  health: func() -> result<string, string>;
+}
+

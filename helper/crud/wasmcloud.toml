@@ -5,6 +5,6 @@ type = "component"
 [component]
 wasm_target = "wasm32-wasip2"
 
-[[registry.pull.sources]]
-target = "betty-blocks:data-api/data-api"
-source = "file://../data-api/wit/world.wit"
+[overrides]
+"betty-blocks:data-api" = { path = "../../wit/data-api.wit" }
+"betty-blocks:types" = { path = "../../wit/types.wit" }
