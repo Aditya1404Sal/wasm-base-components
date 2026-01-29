@@ -14,7 +14,7 @@ interface types {
   record property-path {
     name: string,
     kind: string,
-    property: option<list<property>>,
+    object-fields: option<list<property>>,
   }
 
   record property-map {
