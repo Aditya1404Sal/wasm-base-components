@@ -3,42 +3,20 @@ package betty-blocks:types;
 interface types {
    type json-string = string;
 
-   record run-payload {
-      input: json-string,
-      configurations: json-string,
-   }
-
-   record run-input {
-      action-id: string,
-      payload: run-payload,
-   }
-
-   record run-output {
-      %result: json-string,
-   }
-
    record model {
       name: string
    }
 
-   record object-field {
+   record property {
       name: string,
+      kind: string
    }
 
-   record property-path {
-      name: string,
-      kind: string,
-      object-fields: option<list<object-field>>
-   }
+   type property-path = list<property>;
 
    record property-map {
-      key: list<property-path>,
+      key: property-path,
       value: option<json-string>
-   }
-
-   variant error {
-      run-failed(string),
-      forbidden,
    }
 
    type property-mapping = list<property-map>;
