@@ -6,7 +6,10 @@ pub mod bindings {
     wit_bindgen::generate!({ generate_all });
 }
 
-use crate::bindings::betty_blocks::actions::actions::{call, health,Error as ActionError, RunInput as Input, RunOutput as Output, RunPayload as Payload};
+use crate::bindings::betty_blocks::actions::actions::{
+    Error as ActionError, RunInput as Input, RunOutput as Output, RunPayload as Payload, call,
+    health,
+};
 
 struct Component;
 

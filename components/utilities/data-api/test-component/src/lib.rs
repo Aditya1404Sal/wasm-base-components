@@ -3,7 +3,9 @@ use wasmcloud_component::http;
 
 wit_bindgen::generate!({ generate_all });
 
-use crate::betty_blocks::data_api::data_api::{request as data_api_request, HelperContext as DataApiContext};
+use crate::betty_blocks::data_api::data_api::{
+    request as data_api_request, HelperContext as DataApiContext,
+};
 
 const EMPTY_FIELD: &str = "empty";
 const MAX_READ: u64 = 2u64.pow(24); // 2**24 = 16mb

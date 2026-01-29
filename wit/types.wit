@@ -9,13 +9,16 @@ interface types {
 
    record property {
       name: string,
-      kind: string
    }
 
-   type property-path = list<property>;
+   record property-path {
+      name: string,
+      kind: string,
+      object-fields: option<list<property>>
+  }
 
    record property-map {
-      key: property-path,
+      key: list<property-path>,
       value: option<json-string>
    }
 
