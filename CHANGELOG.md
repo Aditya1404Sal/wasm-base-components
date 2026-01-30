@@ -1,3 +1,15 @@
+## [1.3.3](https://github.com/bettyblocks/wasm-base-components/compare/v1.3.2...v1.3.3) (2026-01-30)
+
+
+### Bug Fixes
+
+* ci cache directory update & readme modified to show updated repo structure ([315e419](https://github.com/bettyblocks/wasm-base-components/commit/315e4196c552f701e79ad00c78fb3c33b72a25ad))
+
+
+### Reverts
+
+* property-path has list of property as well as base name & kind ([aa51270](https://github.com/bettyblocks/wasm-base-components/commit/aa5127005105f5864ffa6d4ee3a99301b54e5c14))
+
 ## [1.3.2](https://github.com/bettyblocks/wasm-base-components/compare/v1.3.1...v1.3.2) (2026-01-22)
 
 
