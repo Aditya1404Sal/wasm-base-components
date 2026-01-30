@@ -49,8 +49,8 @@ See the [./integration-test](./integration-test) folder
 ## Repo Layout
 
 - Justfile: contains commands to run commands
-- providers: contains code that needs state and/or os-level access
-- helper: contains wasm components that are not action steps
+- components: contains wasm components that are not action steps
 - deploy: contains the code/scripts to deploy the native application
 - integration-test: Contains the tests to verify that the providers work in wasmcloud
+- wit: contains shared WIT interface definitions used by the wasm components
 - .github/workflows: CI/CD pipelines for building, releasing, and publishing

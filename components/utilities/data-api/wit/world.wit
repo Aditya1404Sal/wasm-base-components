@@ -1,0 +1,5 @@
+package betty-blocks:data-api-tester;
+
+world provider {
+    export betty-blocks:data-api/data-api;
+}

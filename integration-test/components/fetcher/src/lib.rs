@@ -28,7 +28,7 @@ impl http::Server for Component {
     fn handle(
         request: http::IncomingRequest,
     ) -> http::Result<http::Response<impl http::OutgoingBody>> {
-        log(Level::Info, "", &format!("Hello to your logs from Rust"));
+        log(Level::Info, "", "Hello to your logs from Rust");
 
         let mut router = Router::new();
         router.insert("/example", Routes::Example).unwrap();

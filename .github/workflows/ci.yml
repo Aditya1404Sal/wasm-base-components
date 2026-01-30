@@ -13,13 +13,11 @@ jobs:
         with:
           cache-all-crates: "true"
           cache-directories: |
-            helper/http-wrapper/target
-            helper/data-api/target
-            helper/data-api/test-component/target
-            helper/crud/target
-            helper/log-to-stdout/target
-            providers/smtp-provider/target
-            providers/smtp-provider/component
+            components/http-wrapper/target
+            components/utilities/data-api/target
+            components/utilities/data-api/test-component/target
+            components/utilities/crud/target
+            components/utilities/log-to-stdout/target
 
       - name: Install stable Rust toolchain
         # uses: dtolnay/rust-toolchain@stable
