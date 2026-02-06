@@ -5,14 +5,16 @@ wit_bindgen::generate!({
     generate_all,
 });
 
-use exports::wasi::http::incoming_handler::Guest as McpHandler;
-
 mod actions;
 mod config;
 mod mcp;
 mod types;
+mod validation;
 
 use crate::betty_blocks::auth::jwt::validate_token;
+use exports::wasi::http::incoming_handler::Guest as McpHandler;
+
+const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024; // 10Mb : a mcp request is typically in Kbs (Safe limit I'd say??)
 
 struct Component;
 
@@ -91,7 +93,7 @@ fn handle_mcp_request(
         }
     };
 
-    match mcp::process_rpc(&server_id, &body) {
+    match crate::mcp::process_rpc(&server_id, &body) {
         Ok(result) => match serde_json::to_string(&result) {
             Ok(body_str) => send_response(response_out, 200, body_str),
             Err(e) => {
@@ -151,9 +153,15 @@ fn read_request_body(
         .map_err(|_| "Failed to get input stream")?;
 
     let mut buf = Vec::new();
-    while let Ok(chunk) = input_stream.blocking_read(1024 * 1024) {
+    while let Ok(chunk) = input_stream.blocking_read(64 * 1024) {
         if chunk.is_empty() {
             break;
+        }
+        if buf.len() + chunk.len() > MAX_REQUEST_BODY_SIZE {
+            return Err(format!(
+                "Request body is too large. Maximum size is {} bytes. Possibility of malicious payload",
+                MAX_REQUEST_BODY_SIZE
+            ));
         }
         buf.extend_from_slice(&chunk);
     }

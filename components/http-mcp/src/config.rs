@@ -1,5 +1,5 @@
 use crate::types::{McpServerConfig, McpServersConfig};
-use crate::wasi::config::store::get_all;
+use crate::wasi::config::store::get;
 
 const WASI_CONFIG_KEY: &str = "mcp_servers";
 
@@ -14,19 +14,14 @@ pub fn load_server_config(server_id: &str) -> Result<McpServerConfig, String> {
 }
 
 fn load_all_servers_config() -> Result<McpServersConfig, String> {
-    let config = get_all().map_err(|e| format!("Failed to get wasi config: {:?}", e))?;
+    let value = get(WASI_CONFIG_KEY)
+        .map_err(|e| format!("Failed to get wasi config: {:?}", e))?
+        .ok_or_else(|| "mcp_servers key not found in runtime configuration".to_string())?;
 
-    config
-        .iter()
-        .find(|(key, _)| key == WASI_CONFIG_KEY)
-        .map(|(_, value)| {
-            serde_json::from_str(value)
-                .map_err(|e| format!("Failed to parse mcp_servers config: {}", e))
-        })
-        .unwrap_or_else(|| Err("mcp_servers key not found in runtime configuration".to_string()))
+    serde_json::from_str(&value).map_err(|e| format!("Failed to parse mcp_servers config: {}", e))
 }
 
-// Requires wasm emv for testing, keeping it on-hold for now
+// Requires wasm env for testing, keeping it on-hold for now
 
 // #[cfg(test)]
 // mod tests {
