@@ -11,8 +11,7 @@ pub fn validate_arguments(
     let schema_value =
         serde_json::to_value(schema).map_err(|e| format!("Failed to serialize schema: {}", e))?;
 
-    // validator_for compiles and caches the schema internally,
-    // testing this to see if  it makes it faster
+    // validator_for compiles and caches the schema internally (makes it faster)
     let validator = validator_for(&schema_value).map_err(|e| format!("Invalid schema: {}", e))?;
 
     if validator.is_valid(&args_value) {

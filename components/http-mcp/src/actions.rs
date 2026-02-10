@@ -18,6 +18,7 @@ pub fn execute_mapped_action(action_id: &str, arguments: &Value) -> Result<Actio
         payload,
     };
 
+    // The wit call to actions component
     match call(&run_input) {
         Ok(output) => {
             let data: Option<Value> = serde_json::from_str(&output.result).ok();
@@ -98,7 +99,12 @@ fn parse_content_array(content_array: &[Value]) -> Result<Vec<ContentBlock>, Str
                         ));
                     }
                 }
-                _ => {}
+                other => {
+                    return Err(format!(
+                        "Unsupported content type in action output: '{}'",
+                        other
+                    ));
+                }
             }
         }
     }

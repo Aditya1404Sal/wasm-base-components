@@ -54,7 +54,7 @@ pub fn process_rpc(server_id: &str, body: &str) -> Result<JsonrpcResponse, Jsonr
     };
 
     let result = match request.method.as_str() {
-        "initialize" => handle_initialize(&params),
+        "initialize" => handle_initialize(),
         "tools/list" => handle_list_tools(&server_config),
         "tools/call" => handle_call_tool(&params, &server_config),
         _ => {
@@ -98,22 +98,15 @@ fn make_error_response_or_fallback(
     }
 }
 
-fn handle_initialize(params: &Value) -> Result<Value, String> {
-    let protocol_version = params
-        .get("protocolVersion")
-        .and_then(|v| v.as_str())
-        .unwrap_or(LATEST_PROTOCOL_VERSION);
+fn handle_initialize() -> Result<Value, String> {
+    let mut init_result = crate::config::load_initialize_result()?;
 
-    let capabilities = params.get("capabilities").cloned().unwrap_or(json!({}));
+    if init_result.protocol_version.is_empty() {
+        init_result.protocol_version = LATEST_PROTOCOL_VERSION.to_string();
+    }
 
-    Ok(json!({
-        "protocolVersion": protocol_version,
-        "capabilities": capabilities,
-        "serverInfo": {
-            "name": "betty-mcp-server",
-            "version": "0.1.0"
-        }
-    }))
+    serde_json::to_value(init_result)
+        .map_err(|e| format!("Failed to serialize initialize result: {}", e))
 }
 
 fn handle_list_tools(server_config: &McpServerConfig) -> Result<Value, String> {
@@ -208,4 +201,247 @@ pub fn create_error_response(
     })?;
 
     Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn make_test_server_config() -> McpServerConfig {
+        serde_json::from_value(json!({
+            "id": "test-server",
+            "tools": [
+                {
+                    "name": "get_weather",
+                    "description": "Get weather for a location",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "location": { "type": "string" }
+                        },
+                        "required": ["location"]
+                    },
+                    "action-id": "action-001"
+                },
+                {
+                    "name": "add_numbers",
+                    "description": "Add two numbers",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "a": { "type": "number" },
+                            "b": { "type": "number" }
+                        },
+                        "required": ["a", "b"]
+                    },
+                    "action-id": "action-002"
+                }
+            ]
+        }))
+        .expect("test server config must parse")
+    }
+
+    // --- create_success_response tests ---
+
+    #[test]
+    fn test_create_success_response_with_numeric_id() {
+        let result = create_success_response(Some(json!(1)), json!({"status": "ok"}));
+        assert!(result.is_ok());
+
+        let serialized = serde_json::to_value(result.unwrap()).unwrap();
+        assert_eq!(serialized["jsonrpc"], JSONRPC_VERSION);
+        assert_eq!(serialized["id"], json!(1));
+        assert_eq!(serialized["result"]["status"], "ok");
+    }
+
+    #[test]
+    fn test_create_success_response_with_string_id() {
+        let result = create_success_response(Some(json!("req-42")), json!({"data": [1, 2, 3]}));
+        assert!(result.is_ok());
+
+        let serialized = serde_json::to_value(result.unwrap()).unwrap();
+        assert_eq!(serialized["id"], "req-42");
+    }
+
+    #[test]
+    fn test_create_success_response_with_null_id_fails() {
+        // JsonrpcResponse requires a valid RequestId, so None (null) is rejected
+        let result = create_success_response(None, json!({}));
+        assert!(result.is_err());
+    }
+
+    // --- create_error_response tests ---
+
+    #[test]
+    fn test_create_error_response_method_not_found() {
+        let result = create_error_response(Some(json!(1)), -32601, "Method not found");
+        assert!(result.is_ok());
+
+        let serialized = serde_json::to_value(result.unwrap()).unwrap();
+        assert_eq!(serialized["jsonrpc"], JSONRPC_VERSION);
+        assert_eq!(serialized["id"], 1);
+        assert_eq!(serialized["error"]["code"], -32601);
+        assert_eq!(serialized["error"]["message"], "Method not found");
+    }
+
+    #[test]
+    fn test_create_error_response_parse_error() {
+        let result = create_error_response(None, -32700, "Parse error");
+        assert!(result.is_ok());
+
+        let serialized = serde_json::to_value(result.unwrap()).unwrap();
+        assert!(serialized["id"].is_null());
+        assert_eq!(serialized["error"]["code"], -32700);
+    }
+
+    #[test]
+    fn test_create_error_response_invalid_request() {
+        let result = create_error_response(Some(json!("abc")), -32600, "Invalid Request");
+        assert!(result.is_ok());
+
+        let serialized = serde_json::to_value(result.unwrap()).unwrap();
+        assert_eq!(serialized["error"]["code"], -32600);
+        assert_eq!(serialized["error"]["message"], "Invalid Request");
+    }
+
+    #[test]
+    fn test_create_error_response_internal_error() {
+        let result = create_error_response(Some(json!(99)), -32603, "Internal error");
+        assert!(result.is_ok());
+    }
+
+    // --- make_error_response_or_fallback tests ---
+
+    #[test]
+    fn test_make_error_response_with_id() {
+        let resp = make_error_response_or_fallback(Some(json!(5)), -32600, "Bad request");
+        let serialized = serde_json::to_value(&resp).unwrap();
+        assert_eq!(serialized["id"], 5);
+        assert_eq!(serialized["error"]["code"], -32600);
+        assert_eq!(serialized["error"]["message"], "Bad request");
+    }
+
+    #[test]
+    fn test_make_error_response_without_id() {
+        let resp = make_error_response_or_fallback(None, -32700, "Parse error");
+        let serialized = serde_json::to_value(&resp).unwrap();
+        assert!(serialized["id"].is_null());
+        assert_eq!(serialized["error"]["code"], -32700);
+    }
+
+    // --- handle_list_tools tests ---
+
+    #[test]
+    fn test_handle_list_tools_returns_all_tools() {
+        let config = make_test_server_config();
+        let result = handle_list_tools(&config).unwrap();
+
+        let tools = result["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0]["name"], "get_weather");
+        assert_eq!(tools[1]["name"], "add_numbers");
+    }
+
+    #[test]
+    fn test_handle_list_tools_includes_descriptions() {
+        let config = make_test_server_config();
+        let result = handle_list_tools(&config).unwrap();
+
+        let tools = result["tools"].as_array().unwrap();
+        assert_eq!(tools[0]["description"], "Get weather for a location");
+        assert_eq!(tools[1]["description"], "Add two numbers");
+    }
+
+    #[test]
+    fn test_handle_list_tools_includes_input_schema() {
+        let config = make_test_server_config();
+        let result = handle_list_tools(&config).unwrap();
+
+        let tools = result["tools"].as_array().unwrap();
+        assert_eq!(tools[0]["inputSchema"]["type"], "object");
+        let required = tools[0]["inputSchema"]["required"].as_array().unwrap();
+        assert_eq!(required, &[json!("location")]);
+    }
+
+    #[test]
+    fn test_handle_list_tools_empty_server() {
+        let config: McpServerConfig = serde_json::from_value(json!({
+            "id": "empty-server",
+            "tools": []
+        }))
+        .unwrap();
+
+        let result = handle_list_tools(&config).unwrap();
+        let tools = result["tools"].as_array().unwrap();
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn test_handle_list_tools_no_next_cursor() {
+        let config = make_test_server_config();
+        let result = handle_list_tools(&config).unwrap();
+        assert!(result.get("nextCursor").is_none() || result["nextCursor"].is_null());
+    }
+
+    // --- handle_call_tool param parsing tests ---
+    // (action execution requires WASI runtime, so we test the validation/parsing path)
+
+    #[test]
+    fn test_handle_call_tool_unknown_tool() {
+        let config = make_test_server_config();
+        let params = json!({ "name": "nonexistent_tool" });
+        let result = handle_call_tool(&params, &config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    fn test_handle_call_tool_invalid_params() {
+        let config = make_test_server_config();
+        let params = json!({ "invalid": true });
+        let result = handle_call_tool(&params, &config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid tool call parameters"));
+    }
+
+    #[test]
+    fn test_handle_call_tool_invalid_arguments_against_schema() {
+        let config = make_test_server_config();
+        // "location" is required as a string, passing a number should fail validation
+        let params = json!({
+            "name": "get_weather",
+            "arguments": { "location": 123 }
+        });
+        let result = handle_call_tool(&params, &config);
+        assert!(result.is_err());
+    }
+
+    // --- round-trip serialization tests ---
+
+    #[test]
+    fn test_success_response_round_trip() {
+        let original_result = json!({
+            "tools": [{"name": "test", "inputSchema": {"type": "object"}}]
+        });
+        let resp = create_success_response(Some(json!(1)), original_result.clone()).unwrap();
+        let serialized = serde_json::to_string(&resp).unwrap();
+        let deserialized: Value = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized["jsonrpc"], JSONRPC_VERSION);
+        assert_eq!(deserialized["id"], 1);
+        assert_eq!(deserialized["result"], original_result);
+    }
+
+    #[test]
+    fn test_error_response_round_trip() {
+        let resp = create_error_response(Some(json!(42)), -32601, "Method not found").unwrap();
+        let serialized = serde_json::to_string(&resp).unwrap();
+        let deserialized: Value = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized["jsonrpc"], JSONRPC_VERSION);
+        assert_eq!(deserialized["id"], 42);
+        assert_eq!(deserialized["error"]["code"], -32601);
+        assert_eq!(deserialized["error"]["message"], "Method not found");
+    }
 }

@@ -16,12 +16,6 @@ pub struct McpServerConfig {
     pub tools: Vec<ToolWithAction>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct McpServersConfig {
-    #[serde(rename = "mcp-servers")]
-    pub mcp_servers: Vec<McpServerConfig>,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct ActionResponse {
     pub success: bool,

@@ -26,7 +26,5 @@ interface jwt {
         validation-failed(string),
     }
 
-    type auth-headers = list<tuple<string, string>>;
-
-    validate-token: func(headers: auth-headers) -> result<claims, auth-error>;
+   validate-token: func(token: string) -> result<claims, auth-error>;
 }

@@ -1,5 +1,5 @@
-package betty-blocks:auth-implementer;
+package betty-blocks:validate-auth;
 
-world hello {
+world auth {
    export betty-blocks:auth/jwt;
 }

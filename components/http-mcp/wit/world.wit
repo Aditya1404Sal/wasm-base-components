@@ -1,4 +1,4 @@
-package wasmcloud:mcp@0.1.0;
+package betty-blocks:mcp@0.1.0;
 
 world mcp {
     import betty-blocks:auth/jwt;

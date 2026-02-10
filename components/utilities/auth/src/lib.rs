@@ -4,31 +4,14 @@ pub mod bindings {
     wit_bindgen::generate!({ generate_all });
 }
 
-use crate::bindings::exports::betty_blocks::auth::jwt::{AuthError, AuthHeaders, Claims, Guest};
+use crate::bindings::exports::betty_blocks::auth::jwt::{AuthError, Claims, Guest};
 
 struct Component;
 
-/// Extracts the Bearer token from the Authorization header
-fn extract_token(headers: &AuthHeaders) -> Result<&str, AuthError> {
-    let auth_header = headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
-        .ok_or(AuthError::MissingHeader)?;
-
-    auth_header
-        .1
-        .strip_prefix("Bearer ")
-        .map(str::trim)
-        .filter(|t| !t.is_empty() && *t != "null")
-        .ok_or(AuthError::InvalidFormat)
-}
-
-fn validate_rs256(headers: AuthHeaders) -> Result<Claims, AuthError> {
+fn validate_rs256(token: String) -> Result<Claims, AuthError> {
     use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 
-    let token = extract_token(&headers)?;
-
-    let header = decode_header(token).map_err(|_| AuthError::MalformedToken)?;
+    let header = decode_header(&token).map_err(|_| AuthError::MalformedToken)?;
 
     if header.alg != Algorithm::RS256 {
         return Err(AuthError::UnsupportedAlgorithm(format!(
@@ -56,18 +39,16 @@ fn validate_rs256(headers: AuthHeaders) -> Result<Claims, AuthError> {
     let decoding_key = DecodingKey::from_rsa_pem(public_key_pem.as_bytes())
         .map_err(|e| AuthError::InvalidPublicKey(format!("Invalid JWT public key: {}", e)))?;
 
-    let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)
+    let token_data = decode::<JwtClaims>(&token, &decoding_key, &validation)
         .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {}", e)))?;
 
     Ok(token_data.claims.into())
 }
 
-fn validate_hs512(headers: AuthHeaders) -> Result<Claims, AuthError> {
+fn validate_hs512(token: String) -> Result<Claims, AuthError> {
     use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 
-    let token = extract_token(&headers)?;
-
-    let header = decode_header(token).map_err(|_| AuthError::MalformedToken)?;
+    let header = decode_header(&token).map_err(|_| AuthError::MalformedToken)?;
 
     if header.alg != Algorithm::HS512 {
         return Err(AuthError::UnsupportedAlgorithm(format!(
@@ -94,7 +75,7 @@ fn validate_hs512(headers: AuthHeaders) -> Result<Claims, AuthError> {
 
     let decoding_key = DecodingKey::from_secret(secret.as_bytes());
 
-    let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)
+    let token_data = decode::<JwtClaims>(&token, &decoding_key, &validation)
         .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {}", e)))?;
 
     Ok(token_data.claims.into())
@@ -137,15 +118,14 @@ impl From<JwtClaims> for Claims {
 }
 
 impl Guest for Component {
-    fn validate_token(headers: AuthHeaders) -> Result<Claims, AuthError> {
+    fn validate_token(token: String) -> Result<Claims, AuthError> {
         use jsonwebtoken::{decode_header, Algorithm};
 
-        let token = extract_token(&headers)?;
-        let header = decode_header(token).map_err(|_| AuthError::MalformedToken)?;
+        let header = decode_header(&token).map_err(|_| AuthError::MalformedToken)?;
 
         match header.alg {
-            Algorithm::RS256 => validate_rs256(headers),
-            Algorithm::HS512 => validate_hs512(headers),
+            Algorithm::RS256 => validate_rs256(token),
+            Algorithm::HS512 => validate_hs512(token),
             alg => Err(AuthError::UnsupportedAlgorithm(format!(
                 "Unsupported algorithm: {:?}. Only RS256 and HS512 are supported",
                 alg
@@ -160,6 +140,12 @@ bindings::export!(Component with_types_in bindings);
 mod tests {
     use super::*;
     use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+    use std::sync::Mutex;
+
+    // Serializes tests that mutate env vars to prevent data races.
+    // std::env::set_var is not thread-safe; this mutex ensures only one
+    // test mutates the environment at a time.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn generate_rsa_key_pair() -> (String, String) {
         use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
@@ -239,6 +225,7 @@ mod tests {
 
     #[test]
     fn test_rs256_valid_jwt_with_valid_signature() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let (private_key, public_key) = generate_rsa_key_pair();
         setup_test_env_rs256(&public_key);
 
@@ -256,6 +243,7 @@ mod tests {
 
     #[test]
     fn test_rs256_valid_jwt_with_invalid_signature() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let (private_key1, _) = generate_rsa_key_pair();
         let (_, public_key2) = generate_rsa_key_pair();
         setup_test_env_rs256(&public_key2);
@@ -271,6 +259,7 @@ mod tests {
 
     #[test]
     fn test_rs256_expired_jwt_token() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let (private_key, public_key) = generate_rsa_key_pair();
         setup_test_env_rs256(&public_key);
 
@@ -287,6 +276,7 @@ mod tests {
 
     #[test]
     fn test_hs512_valid_jwt_with_valid_secret() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let secret = "super_secret_key_for_hs512_testing_purposes";
         setup_test_env_hs512(secret);
 
@@ -304,6 +294,7 @@ mod tests {
 
     #[test]
     fn test_hs512_valid_jwt_with_invalid_secret() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let secret1 = "correct_secret_key";
         let secret2 = "wrong_secret_key";
         setup_test_env_hs512(secret2);
@@ -319,6 +310,7 @@ mod tests {
 
     #[test]
     fn test_hs512_expired_jwt_token() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let secret = "super_secret_key_for_hs512_testing_purposes";
         setup_test_env_hs512(secret);
 
@@ -335,6 +327,7 @@ mod tests {
 
     #[test]
     fn test_malformed_jwt() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let (_, public_key) = generate_rsa_key_pair();
         setup_test_env_rs256(&public_key);
 
@@ -349,6 +342,7 @@ mod tests {
 
     #[test]
     fn test_null_jwt_token() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let (_, public_key) = generate_rsa_key_pair();
         setup_test_env_rs256(&public_key);
 
@@ -360,6 +354,7 @@ mod tests {
 
     #[test]
     fn test_missing_authorization_header() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let (_, public_key) = generate_rsa_key_pair();
         setup_test_env_rs256(&public_key);
 
@@ -371,6 +366,7 @@ mod tests {
 
     #[test]
     fn test_unsupported_algorithm() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let (_, public_key) = generate_rsa_key_pair();
         setup_test_env_rs256(&public_key);
 
