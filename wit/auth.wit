@@ -17,8 +17,6 @@ interface jwt {
     }
 
     variant auth-error {
-        missing-header,
-        invalid-format,
         malformed-token,
         unsupported-algorithm(string),
         missing-config(string),

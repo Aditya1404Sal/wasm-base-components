@@ -37,10 +37,10 @@ fn validate_rs256(token: String) -> Result<Claims, AuthError> {
     validation.leeway = 60;
 
     let decoding_key = DecodingKey::from_rsa_pem(public_key_pem.as_bytes())
-        .map_err(|e| AuthError::InvalidPublicKey(format!("Invalid JWT public key: {}", e)))?;
+        .map_err(|e| AuthError::InvalidPublicKey(format!("Invalid JWT public key: {e}")))?;
 
     let token_data = decode::<JwtClaims>(&token, &decoding_key, &validation)
-        .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {}", e)))?;
+        .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {e}")))?;
 
     Ok(token_data.claims.into())
 }
@@ -76,7 +76,7 @@ fn validate_hs512(token: String) -> Result<Claims, AuthError> {
     let decoding_key = DecodingKey::from_secret(secret.as_bytes());
 
     let token_data = decode::<JwtClaims>(&token, &decoding_key, &validation)
-        .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {}", e)))?;
+        .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {e}")))?;
 
     Ok(token_data.claims.into())
 }
@@ -127,8 +127,7 @@ impl Guest for Component {
             Algorithm::RS256 => validate_rs256(token),
             Algorithm::HS512 => validate_hs512(token),
             alg => Err(AuthError::UnsupportedAlgorithm(format!(
-                "Unsupported algorithm: {:?}. Only RS256 and HS512 are supported",
-                alg
+                "Unsupported algorithm: {alg:?}. Only RS256 and HS512 are supported"
             ))),
         }
     }
@@ -232,8 +231,7 @@ mod tests {
         let claims = generate_claims(3600);
         let token = generate_jwt_token_rs256(&private_key, claims);
 
-        let headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token(token);
 
         assert!(result.is_ok());
         let validated_claims = result.unwrap();
@@ -251,8 +249,7 @@ mod tests {
         let claims = generate_claims(3600);
         let token = generate_jwt_token_rs256(&private_key1, claims);
 
-        let headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token(token);
 
         assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
     }
@@ -266,8 +263,7 @@ mod tests {
         let claims = generate_claims(-3600);
         let token = generate_jwt_token_rs256(&private_key, claims);
 
-        let headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token(token);
 
         assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
     }
@@ -283,10 +279,9 @@ mod tests {
         let claims = generate_claims(3600);
         let token = generate_jwt_token_hs512(secret.as_bytes(), claims);
 
-        let headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token(token);
 
-        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+        assert!(result.is_ok(), "Expected Ok, got: {result:?}");
         let validated_claims = result.unwrap();
         assert_eq!(validated_claims.aud, "Joken");
         assert_eq!(validated_claims.user_id, 1);
@@ -302,8 +297,7 @@ mod tests {
         let claims = generate_claims(3600);
         let token = generate_jwt_token_hs512(secret1.as_bytes(), claims);
 
-        let headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token(token);
 
         assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
     }
@@ -317,8 +311,7 @@ mod tests {
         let claims = generate_claims(-3600);
         let token = generate_jwt_token_hs512(secret.as_bytes(), claims);
 
-        let headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token(token);
 
         assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
     }
@@ -331,11 +324,7 @@ mod tests {
         let (_, public_key) = generate_rsa_key_pair();
         setup_test_env_rs256(&public_key);
 
-        let headers = vec![(
-            "Authorization".to_string(),
-            "Bearer not.a.valid.jwt".to_string(),
-        )];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token("not.a.valid.jwt".to_string());
 
         assert!(matches!(result, Err(AuthError::MalformedToken)));
     }
@@ -343,25 +332,10 @@ mod tests {
     #[test]
     fn test_null_jwt_token() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let (_, public_key) = generate_rsa_key_pair();
-        setup_test_env_rs256(&public_key);
 
-        let headers = vec![("Authorization".to_string(), "Bearer null".to_string())];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token("null".to_string());
 
-        assert!(matches!(result, Err(AuthError::InvalidFormat)));
-    }
-
-    #[test]
-    fn test_missing_authorization_header() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let (_, public_key) = generate_rsa_key_pair();
-        setup_test_env_rs256(&public_key);
-
-        let headers = vec![];
-        let result = Component::validate_token(headers);
-
-        assert!(matches!(result, Err(AuthError::MissingHeader)));
+        assert!(matches!(result, Err(AuthError::MalformedToken)));
     }
 
     #[test]
@@ -376,8 +350,7 @@ mod tests {
         let header = Header::new(Algorithm::HS256);
         let token = encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap();
 
-        let headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
-        let result = Component::validate_token(headers);
+        let result = Component::validate_token(token);
 
         assert!(matches!(result, Err(AuthError::UnsupportedAlgorithm(_))));
     }

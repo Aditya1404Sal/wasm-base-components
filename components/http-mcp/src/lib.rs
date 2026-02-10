@@ -140,8 +140,6 @@ fn extract_bearer_token(headers: &[(String, String)]) -> Result<String, String> 
 
 fn format_auth_error(err: &AuthError) -> String {
     match err {
-        AuthError::MissingHeader => "Missing Authorization header".to_string(),
-        AuthError::InvalidFormat => "Invalid Authorization header format".to_string(),
         AuthError::MalformedToken => "Malformed JWT token".to_string(),
         AuthError::UnsupportedAlgorithm(detail) => {
             format!("Unsupported algorithm: {}", detail)
@@ -396,18 +394,6 @@ mod tests {
     }
 
     // --- format_auth_error tests ---
-
-    #[test]
-    fn test_format_auth_error_missing_header() {
-        let msg = format_auth_error(&AuthError::MissingHeader);
-        assert_eq!(msg, "Missing Authorization header");
-    }
-
-    #[test]
-    fn test_format_auth_error_invalid_format() {
-        let msg = format_auth_error(&AuthError::InvalidFormat);
-        assert_eq!(msg, "Invalid Authorization header format");
-    }
 
     #[test]
     fn test_format_auth_error_malformed_token() {
