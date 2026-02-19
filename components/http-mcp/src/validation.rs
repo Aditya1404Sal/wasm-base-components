@@ -3,15 +3,16 @@ use rust_mcp_schema::ToolInputSchema;
 use serde_json::Value;
 
 pub fn validate_arguments(
-    arguments: &serde_json::Map<String, Value>,
+    arguments: Option<&serde_json::Map<String, Value>>,
     schema: &ToolInputSchema,
 ) -> Result<(), String> {
-    let args_value = Value::Object(arguments.clone());
+    let args_value = arguments
+        .map(|m| Value::Object(m.clone()))
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
     let schema_value =
         serde_json::to_value(schema).map_err(|e| format!("Failed to serialize schema: {}", e))?;
 
-    // validator_for compiles and caches the schema internally (makes it faster)
     let validator = validator_for(&schema_value).map_err(|e| format!("Invalid schema: {}", e))?;
 
     if validator.is_valid(&args_value) {
@@ -46,10 +47,10 @@ mod tests {
         }));
 
         let valid = json!({ "location": "Amsterdam", "unit": "celsius" });
-        assert!(validate_arguments(valid.as_object().unwrap(), &schema).is_ok());
+        assert!(validate_arguments(Some(valid.as_object().unwrap()), &schema).is_ok());
 
         let missing = json!({ "unit": "celsius" });
-        assert!(validate_arguments(missing.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(missing.as_object().unwrap()), &schema).is_err());
     }
 
     #[test]
@@ -65,10 +66,10 @@ mod tests {
         }));
 
         let valid = json!({ "unit": "celsius" });
-        assert!(validate_arguments(valid.as_object().unwrap(), &schema).is_ok());
+        assert!(validate_arguments(Some(valid.as_object().unwrap()), &schema).is_ok());
 
         let invalid = json!({ "unit": "kelvin" });
-        assert!(validate_arguments(invalid.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(invalid.as_object().unwrap()), &schema).is_err());
     }
 
     #[test]
@@ -85,13 +86,13 @@ mod tests {
         }));
 
         let valid = json!({ "name": "Alice" });
-        assert!(validate_arguments(valid.as_object().unwrap(), &schema).is_ok());
+        assert!(validate_arguments(Some(valid.as_object().unwrap()), &schema).is_ok());
 
         let too_short = json!({ "name": "Al" });
-        assert!(validate_arguments(too_short.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(too_short.as_object().unwrap()), &schema).is_err());
 
         let too_long = json!({ "name": "Alexander the Great" });
-        assert!(validate_arguments(too_long.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(too_long.as_object().unwrap()), &schema).is_err());
     }
 
     #[test]
@@ -108,13 +109,13 @@ mod tests {
         }));
 
         let valid = json!({ "age": 25 });
-        assert!(validate_arguments(valid.as_object().unwrap(), &schema).is_ok());
+        assert!(validate_arguments(Some(valid.as_object().unwrap()), &schema).is_ok());
 
         let below = json!({ "age": -1 });
-        assert!(validate_arguments(below.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(below.as_object().unwrap()), &schema).is_err());
 
         let above = json!({ "age": 150 });
-        assert!(validate_arguments(above.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(above.as_object().unwrap()), &schema).is_err());
     }
 
     #[test]
@@ -127,10 +128,10 @@ mod tests {
         }));
 
         let valid = json!({ "count": 42 });
-        assert!(validate_arguments(valid.as_object().unwrap(), &schema).is_ok());
+        assert!(validate_arguments(Some(valid.as_object().unwrap()), &schema).is_ok());
 
         let float_val = json!({ "count": 42.5 });
-        assert!(validate_arguments(float_val.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(float_val.as_object().unwrap()), &schema).is_err());
     }
 
     #[test]
@@ -149,22 +150,22 @@ mod tests {
         }));
 
         let valid_bool = json!({ "active": true });
-        assert!(validate_arguments(valid_bool.as_object().unwrap(), &schema).is_ok());
+        assert!(validate_arguments(Some(valid_bool.as_object().unwrap()), &schema).is_ok());
 
         let invalid_bool = json!({ "active": "true" });
-        assert!(validate_arguments(invalid_bool.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(invalid_bool.as_object().unwrap()), &schema).is_err());
 
         let valid_arr = json!({ "tags": ["rust", "wasm"] });
-        assert!(validate_arguments(valid_arr.as_object().unwrap(), &schema).is_ok());
+        assert!(validate_arguments(Some(valid_arr.as_object().unwrap()), &schema).is_ok());
 
         let empty = json!({ "tags": [] });
-        assert!(validate_arguments(empty.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(empty.as_object().unwrap()), &schema).is_err());
 
         let too_many = json!({ "tags": ["a", "b", "c", "d", "e", "f"] });
-        assert!(validate_arguments(too_many.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(too_many.as_object().unwrap()), &schema).is_err());
 
         let wrong_type = json!({ "tags": ["valid", 123] });
-        assert!(validate_arguments(wrong_type.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(wrong_type.as_object().unwrap()), &schema).is_err());
     }
 
     #[test]
@@ -189,14 +190,37 @@ mod tests {
                 "age": 30
             }
         });
-        assert!(validate_arguments(valid.as_object().unwrap(), &schema).is_ok());
+        assert!(validate_arguments(Some(valid.as_object().unwrap()), &schema).is_ok());
 
         let missing = json!({
             "user": {
                 "age": 30
             }
         });
-        assert!(validate_arguments(missing.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(missing.as_object().unwrap()), &schema).is_err());
+    }
+
+    #[test]
+    fn test_validate_no_arguments_optional_fields() {
+        let schema = schema_from_json(json!({
+            "type": "object",
+            "properties": {
+                "location": { "type": "string" }
+            }
+        }));
+        assert!(validate_arguments(None, &schema).is_ok());
+    }
+
+    #[test]
+    fn test_validate_no_arguments_required_fields() {
+        let schema = schema_from_json(json!({
+            "type": "object",
+            "properties": {
+                "location": { "type": "string" }
+            },
+            "required": ["location"]
+        }));
+        assert!(validate_arguments(None, &schema).is_err());
     }
 
     #[test]
@@ -210,6 +234,6 @@ mod tests {
         }));
 
         let wrong = json!({ "name": 123, "count": 5 });
-        assert!(validate_arguments(wrong.as_object().unwrap(), &schema).is_err());
+        assert!(validate_arguments(Some(wrong.as_object().unwrap()), &schema).is_err());
     }
 }

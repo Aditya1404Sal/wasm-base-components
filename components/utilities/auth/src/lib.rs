@@ -1,135 +1,151 @@
-use serde::{Deserialize, Serialize};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use serde::{de::DeserializeOwned, Deserialize};
+use std::collections::HashMap;
 
 pub mod bindings {
     wit_bindgen::generate!({ generate_all });
 }
 
-use crate::bindings::exports::betty_blocks::auth::jwt::{AuthError, Claims, Guest};
+use crate::bindings::exports::betty_blocks::auth::jwt::{AuthError, Configuration, Guest};
+use crate::bindings::wasi::http::types::IncomingRequest;
 
 struct Component;
 
-fn validate_rs256(token: String) -> Result<Claims, AuthError> {
-    use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+const CONFIG_KEY_AUTHENTICATION_PROFILES: &str = "authentication_profiles";
+const CONFIG_KEY_ACTIONS: &str = "actions";
+const CONFIG_KEY_MCPS: &str = "mcps";
 
-    let header = decode_header(&token).map_err(|_| AuthError::MalformedToken)?;
+#[derive(Debug, Deserialize)]
+struct JwtPayload {
+    auth_profile_id: String,
+}
 
-    if header.alg != Algorithm::RS256 {
-        return Err(AuthError::UnsupportedAlgorithm(format!(
-            "Expected RS256 algorithm, got: {:?}",
-            header.alg
-        )));
-    }
+#[derive(Deserialize)]
+struct AuthProfileConfig {
+    value: String,
+    is_encrypted: bool,
+}
 
-    let public_key_pem = std::env::var("JWT_PUBLIC_KEY")
-        .map_err(|_| AuthError::MissingConfig("JWT_PUBLIC_KEY".to_string()))?;
+#[derive(Deserialize)]
+struct ResourceAuthConfig {
+    #[serde(rename = "authentication-profile-id")]
+    authentication_profile_id: String,
+}
 
-    let issuer = std::env::var("JWT_ISSUER")
-        .map_err(|_| AuthError::MissingConfig("JWT_ISSUER".to_string()))?;
+fn load_config<T: DeserializeOwned>(key: &str) -> Result<T, AuthError> {
+    let raw = crate::bindings::wasi::config::store::get(key)
+        .map_err(|e| {
+            AuthError::MissingConfig(format!("Config store error for '{}': {:?}", key, e))
+        })?
+        .ok_or_else(|| {
+            AuthError::MissingConfig(format!("Key '{}' not found in config store", key))
+        })?;
+    serde_json::from_str(&raw)
+        .map_err(|e| AuthError::MissingConfig(format!("Failed to parse {}: {}", key, e)))
+}
 
-    let audience = std::env::var("JWT_AUDIENCE")
-        .map_err(|_| AuthError::MissingConfig("JWT_AUDIENCE".to_string()))?;
+fn load_auth_profiles() -> Result<HashMap<String, AuthProfileConfig>, AuthError> {
+    load_config(CONFIG_KEY_AUTHENTICATION_PROFILES)
+}
 
-    let mut validation = Validation::new(Algorithm::RS256);
+fn load_actions_config() -> Result<HashMap<String, ResourceAuthConfig>, AuthError> {
+    load_config(CONFIG_KEY_ACTIONS)
+}
+
+fn load_mcps_config() -> Result<HashMap<String, ResourceAuthConfig>, AuthError> {
+    load_config(CONFIG_KEY_MCPS)
+}
+
+fn extract_bearer_token(request: &IncomingRequest) -> Result<String, AuthError> {
+    let headers = request.headers().entries();
+    let auth_value = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+        .ok_or(AuthError::MalformedToken)?;
+    let value = String::from_utf8_lossy(&auth_value.1);
+    value
+        .strip_prefix("Bearer ")
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && *t != "null")
+        .map(str::to_string)
+        .ok_or(AuthError::MalformedToken)
+}
+
+fn peek_auth_profile_id(token: &str) -> Result<String, AuthError> {
+    let payload_b64 = token.split('.').nth(1).ok_or(AuthError::MalformedToken)?;
+    let payload_bytes = URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .map_err(|_| AuthError::MalformedToken)?;
+    let claims: JwtPayload =
+        serde_json::from_slice(&payload_bytes).map_err(|_| AuthError::MalformedToken)?;
+    Ok(claims.auth_profile_id)
+}
+
+fn validate_hs256(token: &str, secret: &str) -> Result<(), AuthError> {
+    let mut validation = Validation::new(Algorithm::HS256);
     validation.validate_exp = true;
     validation.validate_nbf = true;
-    validation.set_issuer(&[issuer]);
-    validation.set_audience(&[audience]);
-    validation.leeway = 60;
-
-    let decoding_key = DecodingKey::from_rsa_pem(public_key_pem.as_bytes())
-        .map_err(|e| AuthError::InvalidPublicKey(format!("Invalid JWT public key: {e}")))?;
-
-    let token_data = decode::<JwtClaims>(&token, &decoding_key, &validation)
-        .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {e}")))?;
-
-    Ok(token_data.claims.into())
+    validation.leeway = 30;
+    validation.set_required_spec_claims(&["exp"]);
+    let _claims = decode::<serde_json::Value>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {}", e)))?;
+    Ok(())
 }
 
-fn validate_hs512(token: String) -> Result<Claims, AuthError> {
-    use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
-
-    let header = decode_header(&token).map_err(|_| AuthError::MalformedToken)?;
-
-    if header.alg != Algorithm::HS512 {
-        return Err(AuthError::UnsupportedAlgorithm(format!(
-            "Expected HS512 algorithm, got: {:?}",
-            header.alg
-        )));
-    }
-
-    let secret = std::env::var("JWT_SECRET")
-        .map_err(|_| AuthError::MissingConfig("JWT_SECRET".to_string()))?;
-
-    let issuer = std::env::var("JWT_ISSUER")
-        .map_err(|_| AuthError::MissingConfig("JWT_ISSUER".to_string()))?;
-
-    let audience = std::env::var("JWT_AUDIENCE")
-        .map_err(|_| AuthError::MissingConfig("JWT_AUDIENCE".to_string()))?;
-
-    let mut validation = Validation::new(Algorithm::HS512);
-    validation.validate_exp = true;
-    validation.validate_nbf = true;
-    validation.set_issuer(&[issuer]);
-    validation.set_audience(&[audience]);
-    validation.leeway = 60;
-
-    let decoding_key = DecodingKey::from_secret(secret.as_bytes());
-
-    let token_data = decode::<JwtClaims>(&token, &decoding_key, &validation)
-        .map_err(|e| AuthError::ValidationFailed(format!("JWT validation failed: {e}")))?;
-
-    Ok(token_data.claims.into())
+fn fetch_validated_profile(
+    request: &IncomingRequest,
+) -> Result<(String, AuthProfileConfig), AuthError> {
+    let token = extract_bearer_token(request)?;
+    let jwt_profile_id = peek_auth_profile_id(&token)?;
+    let profiles = load_auth_profiles()?;
+    let profile = profiles
+        .into_iter()
+        .find(|(id, _)| id == &jwt_profile_id)
+        .ok_or_else(|| AuthError::ValidationFailed("Unknown auth profile in JWT".into()))?;
+    validate_hs256(&token, &profile.1.value)?;
+    Ok(profile)
 }
 
-// Helper struct for bridging wit to native rust type
-#[derive(Debug, Serialize, Deserialize)]
-struct JwtClaims {
-    app_uuid: String,
-    aud: String,
-    auth_profile: String,
-    cas_token: String,
-    exp: u64,
-    iat: u64,
-    iss: String,
-    jti: String,
-    locale: Option<String>,
-    nbf: u64,
-    roles: Vec<u32>,
-    user_id: u32,
-}
-
-impl From<JwtClaims> for Claims {
-    fn from(claims: JwtClaims) -> Self {
-        Claims {
-            app_uuid: claims.app_uuid,
-            aud: claims.aud,
-            auth_profile: claims.auth_profile,
-            cas_token: claims.cas_token,
-            exp: claims.exp,
-            iat: claims.iat,
-            iss: claims.iss,
-            jti: claims.jti,
-            locale: claims.locale,
-            nbf: claims.nbf,
-            roles: claims.roles,
-            user_id: claims.user_id,
-        }
-    }
+fn authenticate_and_check_profile(
+    request: &IncomingRequest,
+    expected_profile_id: &str,
+) -> Result<bool, AuthError> {
+    let (jwt_profile_id, _) = fetch_validated_profile(request)?;
+    Ok(jwt_profile_id == expected_profile_id)
 }
 
 impl Guest for Component {
-    fn validate_token(token: String) -> Result<Claims, AuthError> {
-        use jsonwebtoken::{decode_header, Algorithm};
-
-        let header = decode_header(&token).map_err(|_| AuthError::MalformedToken)?;
-
-        match header.alg {
-            Algorithm::RS256 => validate_rs256(token),
-            Algorithm::HS512 => validate_hs512(token),
-            alg => Err(AuthError::UnsupportedAlgorithm(format!(
-                "Unsupported algorithm: {alg:?}. Only RS256 and HS512 are supported"
-            ))),
+    fn allowed_to_call(
+        request: &IncomingRequest,
+        action_id: String,
+    ) -> Result<Configuration, AuthError> {
+        let actions = load_actions_config()?;
+        let action_cfg = actions
+            .get(&action_id)
+            .ok_or_else(|| AuthError::ValidationFailed("Action not found in auth config".into()))?;
+        let (jwt_profile_id, profile) = fetch_validated_profile(request)?;
+        if jwt_profile_id != action_cfg.authentication_profile_id {
+            return Err(AuthError::ValidationFailed(
+                "Forbidden: auth profile does not allow this action".into(),
+            ));
         }
+        Ok(Configuration {
+            value: profile.value,
+            is_encrypted: profile.is_encrypted,
+        })
+    }
+
+    fn allowed_to_list(request: &IncomingRequest, mcp_id: String) -> Result<bool, AuthError> {
+        let mcps = load_mcps_config()?;
+        let mcp_cfg = mcps
+            .get(&mcp_id)
+            .ok_or_else(|| AuthError::ValidationFailed("MCP not found in auth config".into()))?;
+        authenticate_and_check_profile(request, &mcp_cfg.authentication_profile_id)
     }
 }
 
@@ -139,219 +155,75 @@ bindings::export!(Component with_types_in bindings);
 mod tests {
     use super::*;
     use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-    use std::sync::Mutex;
+    use serde::Serialize;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-    // Serializes tests that mutate env vars to prevent data races.
-    // std::env::set_var is not thread-safe; this mutex ensures only one
-    // test mutates the environment at a time.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn generate_rsa_key_pair() -> (String, String) {
-        use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
-        use rsa::RsaPrivateKey;
-
-        let mut rng = rand::thread_rng();
-        let private_key =
-            RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate private key");
-
-        let public_key = private_key.to_public_key();
-
-        let private_pem = private_key
-            .to_pkcs8_pem(LineEnding::LF)
-            .expect("failed to encode private key")
-            .to_string();
-
-        let public_pem = public_key
-            .to_public_key_pem(LineEnding::LF)
-            .expect("failed to encode public key")
-            .to_string();
-
-        (private_pem, public_pem)
-    }
-
-    fn generate_claims(exp_offset_seconds: i64) -> JwtClaims {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now()
+    fn now() -> u64 {
+        SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs()
+    }
 
-        JwtClaims {
-            app_uuid: "ca432225a56f242f7bd2131da647d3c82".to_string(),
-            aud: "Joken".to_string(),
-            auth_profile: "5bf9eba34636495d80ed5a790ca39077".to_string(),
-            cas_token: "d652585964ecfd59bd738bb33f5a421ce85c493e".to_string(),
-            exp: (now as i64 + exp_offset_seconds) as u64,
-            iat: now,
-            iss: "Joken".to_string(),
-            jti: "326h3prprbgrfr4u9k03luh2".to_string(),
-            locale: None,
-            nbf: now,
-            roles: vec![1],
-            user_id: 1,
+    fn make_hs256_token(secret: &[u8], auth_profile: &str, exp_offset: i64) -> String {
+        #[derive(Serialize)]
+        struct Claims {
+            auth_profile_id: String,
+            exp: u64,
+            nbf: u64,
+            iat: u64,
         }
-    }
-
-    fn generate_jwt_token_rs256(private_key_pem: &str, claims: JwtClaims) -> String {
-        let header = Header::new(Algorithm::RS256);
-        let private_key = EncodingKey::from_rsa_pem(private_key_pem.as_bytes())
-            .expect("failed to load private key for signing");
-        encode(&header, &claims, &private_key).expect("failed to encode JWT")
-    }
-
-    fn generate_jwt_token_hs512(secret: &[u8], claims: JwtClaims) -> String {
-        let header = Header::new(Algorithm::HS512);
-        encode(&header, &claims, &EncodingKey::from_secret(secret)).expect("failed to encode JWT")
-    }
-
-    fn setup_test_env_rs256(public_key: &str) {
-        unsafe {
-            std::env::set_var("JWT_ISSUER", "Joken");
-            std::env::set_var("JWT_AUDIENCE", "Joken");
-            std::env::set_var("JWT_PUBLIC_KEY", public_key);
-        }
-    }
-
-    fn setup_test_env_hs512(secret: &str) {
-        unsafe {
-            std::env::set_var("JWT_ISSUER", "Joken");
-            std::env::set_var("JWT_AUDIENCE", "Joken");
-            std::env::set_var("JWT_SECRET", secret);
-        }
-    }
-
-    // Tests for RS256
-
-    #[test]
-    fn test_rs256_valid_jwt_with_valid_signature() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let (private_key, public_key) = generate_rsa_key_pair();
-        setup_test_env_rs256(&public_key);
-
-        let claims = generate_claims(3600);
-        let token = generate_jwt_token_rs256(&private_key, claims);
-
-        let result = Component::validate_token(token);
-
-        assert!(result.is_ok());
-        let validated_claims = result.unwrap();
-        assert_eq!(validated_claims.aud, "Joken");
-        assert_eq!(validated_claims.user_id, 1);
-    }
-
-    #[test]
-    fn test_rs256_valid_jwt_with_invalid_signature() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let (private_key1, _) = generate_rsa_key_pair();
-        let (_, public_key2) = generate_rsa_key_pair();
-        setup_test_env_rs256(&public_key2);
-
-        let claims = generate_claims(3600);
-        let token = generate_jwt_token_rs256(&private_key1, claims);
-
-        let result = Component::validate_token(token);
-
-        assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
-    }
-
-    #[test]
-    fn test_rs256_expired_jwt_token() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let (private_key, public_key) = generate_rsa_key_pair();
-        setup_test_env_rs256(&public_key);
-
-        let claims = generate_claims(-3600);
-        let token = generate_jwt_token_rs256(&private_key, claims);
-
-        let result = Component::validate_token(token);
-
-        assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
-    }
-
-    // Tests for HS512
-
-    #[test]
-    fn test_hs512_valid_jwt_with_valid_secret() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let secret = "super_secret_key_for_hs512_testing_purposes";
-        setup_test_env_hs512(secret);
-
-        let claims = generate_claims(3600);
-        let token = generate_jwt_token_hs512(secret.as_bytes(), claims);
-
-        let result = Component::validate_token(token);
-
-        assert!(result.is_ok(), "Expected Ok, got: {result:?}");
-        let validated_claims = result.unwrap();
-        assert_eq!(validated_claims.aud, "Joken");
-        assert_eq!(validated_claims.user_id, 1);
-    }
-
-    #[test]
-    fn test_hs512_valid_jwt_with_invalid_secret() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let secret1 = "correct_secret_key";
-        let secret2 = "wrong_secret_key";
-        setup_test_env_hs512(secret2);
-
-        let claims = generate_claims(3600);
-        let token = generate_jwt_token_hs512(secret1.as_bytes(), claims);
-
-        let result = Component::validate_token(token);
-
-        assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
-    }
-
-    #[test]
-    fn test_hs512_expired_jwt_token() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let secret = "super_secret_key_for_hs512_testing_purposes";
-        setup_test_env_hs512(secret);
-
-        let claims = generate_claims(-3600);
-        let token = generate_jwt_token_hs512(secret.as_bytes(), claims);
-
-        let result = Component::validate_token(token);
-
-        assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
-    }
-
-    // Common Tests
-
-    #[test]
-    fn test_malformed_jwt() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let (_, public_key) = generate_rsa_key_pair();
-        setup_test_env_rs256(&public_key);
-
-        let result = Component::validate_token("not.a.valid.jwt".to_string());
-
-        assert!(matches!(result, Err(AuthError::MalformedToken)));
-    }
-
-    #[test]
-    fn test_null_jwt_token() {
-        let _guard = ENV_LOCK.lock().unwrap();
-
-        let result = Component::validate_token("null".to_string());
-
-        assert!(matches!(result, Err(AuthError::MalformedToken)));
-    }
-
-    #[test]
-    fn test_unsupported_algorithm() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let (_, public_key) = generate_rsa_key_pair();
-        setup_test_env_rs256(&public_key);
-
-        // Create a token with HS256 algorithm (unsupported - only RS256 and HS512 are allowed)
-        let claims = generate_claims(3600);
-        let secret = b"secret";
+        let n = now();
+        let claims = Claims {
+            auth_profile_id: auth_profile.to_string(),
+            exp: (n as i64 + exp_offset) as u64,
+            nbf: n,
+            iat: n,
+        };
         let header = Header::new(Algorithm::HS256);
-        let token = encode(&header, &claims, &EncodingKey::from_secret(secret)).unwrap();
+        encode(&header, &claims, &EncodingKey::from_secret(secret)).expect("encode failed")
+    }
 
-        let result = Component::validate_token(token);
+    #[test]
+    fn test_peek_auth_profile_id_valid() {
+        let token = make_hs256_token(b"secret", "profile-abc", 3600);
+        let result = peek_auth_profile_id(&token);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "profile-abc");
+    }
 
-        assert!(matches!(result, Err(AuthError::UnsupportedAlgorithm(_))));
+    #[test]
+    fn test_peek_auth_profile_id_malformed_no_dots() {
+        let result = peek_auth_profile_id("nodots");
+        assert!(matches!(result, Err(AuthError::MalformedToken)));
+    }
+
+    #[test]
+    fn test_peek_auth_profile_id_invalid_base64() {
+        let result = peek_auth_profile_id("header.!!!invalid_base64!!!.sig");
+        assert!(matches!(result, Err(AuthError::MalformedToken)));
+    }
+
+    #[test]
+    fn test_validate_hs256_valid() {
+        let secret = b"test_secret";
+        let token = make_hs256_token(secret, "profile-xyz", 3600);
+        let result = validate_hs256(&token, "test_secret");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_hs256_wrong_secret() {
+        let token = make_hs256_token(b"correct_secret", "profile-xyz", 3600);
+        let result = validate_hs256(&token, "wrong_secret");
+        assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
+    }
+
+    #[test]
+    fn test_validate_hs256_expired() {
+        let secret = b"test_secret";
+        let token = make_hs256_token(secret, "profile-xyz", -3600);
+        let result = validate_hs256(&token, "test_secret");
+        assert!(matches!(result, Err(AuthError::ValidationFailed(_))));
     }
 }

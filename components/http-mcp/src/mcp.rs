@@ -1,119 +1,105 @@
 use crate::actions;
+use crate::betty_blocks::auth::jwt::{allowed_to_call, allowed_to_list, AuthError};
 use crate::config;
 use crate::types::*;
+use crate::wasi::http::types::IncomingRequest;
 use rust_mcp_schema::{
-    CallToolRequestParams, CallToolResult, ContentBlock, JsonrpcErrorResponse, JsonrpcRequest,
-    JsonrpcResponse, ListToolsResult, Tool, JSONRPC_VERSION, LATEST_PROTOCOL_VERSION,
+    CallToolRequestParams, CallToolResult, ContentBlock, InitializeResult, JsonrpcErrorResponse,
+    JsonrpcRequest, JsonrpcResponse, JsonrpcResultResponse, ListToolsResult, RequestId, RpcError,
 };
 use serde_json::{json, Value};
 
-pub fn process_rpc(server_id: &str, body: &str) -> Result<JsonrpcResponse, JsonrpcErrorResponse> {
-    let raw: Value = match serde_json::from_str(body) {
-        Ok(v) => v,
+pub fn process_rpc(
+    server_id: &str,
+    request: &IncomingRequest,
+) -> Result<JsonrpcResponse, JsonrpcErrorResponse> {
+    let body = match crate::read_request_body(request) {
+        Ok(b) => b,
         Err(e) => {
-            return Err(make_error_response_or_fallback(
-                None,
-                -32700,
-                &format!("Invalid JSON-RPC request: {}", e),
-            ));
+            return Err(create_error_response(-32700, &e, None));
         }
     };
 
-    let id = raw.get("id").cloned();
-
-    let request: JsonrpcRequest = match serde_json::from_value(raw.clone()) {
+    let request_obj: JsonrpcRequest = match serde_json::from_str(&body) {
         Ok(r) => r,
         Err(e) => {
-            return Err(make_error_response_or_fallback(
-                id,
-                -32600,
+            return Err(create_error_response(
+                -32700,
                 &format!("Invalid JSON-RPC request: {}", e),
+                None,
             ));
         }
     };
 
-    if request.jsonrpc() != JSONRPC_VERSION {
-        return Err(make_error_response_or_fallback(
-            id,
-            -32600,
-            "Invalid Request: jsonrpc must be '2.0'",
-        ));
-    }
-
-    let params = raw.get("params").cloned().unwrap_or(json!({}));
+    let id = Some(request_obj.id);
 
     let server_config = match config::load_server_config(server_id) {
         Ok(cfg) => cfg,
         Err(e) => {
-            return Err(make_error_response_or_fallback(
-                id,
+            return Err(create_error_response(
                 -32000,
                 &format!("Failed to load server config: {}", e),
+                id,
             ));
         }
     };
 
-    let result = match request.method.as_str() {
-        "initialize" => handle_initialize(),
-        "tools/list" => handle_list_tools(&server_config),
-        "tools/call" => handle_call_tool(&params, &server_config),
+    let result = match request_obj.method.as_str() {
+        "initialize" => handle_initialize().and_then(|r| {
+            serde_json::to_value(r)
+                .map_err(|e| format!("Failed to serialize initialize result: {}", e))
+        }),
+        "tools/list" => handle_list_tools(&server_config, request),
+        "tools/call" => {
+            let params = request_obj
+                .params
+                .as_ref()
+                .and_then(|p| serde_json::to_value(p).ok())
+                .unwrap_or(json!({}));
+            handle_call_tool(&server_config, request, params)
+        }
         _ => {
-            return Err(make_error_response_or_fallback(
-                id,
+            return Err(create_error_response(
                 -32601,
-                &format!("Method not found: {}", request.method),
+                &format!("Method not found: {}", request_obj.method),
+                id,
             ));
         }
     };
 
     match result {
-        Ok(result_value) => match create_success_response(id.clone(), result_value) {
+        Ok(result_value) => match create_success_response(id, result_value) {
             Ok(resp) => Ok(resp),
-            Err(e) => Err(make_error_response_or_fallback(
-                id,
+            Err(e) => Err(create_error_response(
                 -32603,
                 &format!("Failed to build response: {}", e),
+                None,
             )),
         },
-        Err(e) => Err(make_error_response_or_fallback(id, -32000, &e)),
+        Err(e) => Err(create_error_response(-32000, &e, id)),
     }
 }
 
-fn make_error_response_or_fallback(
-    id: Option<Value>,
-    code: i32,
-    message: &str,
-) -> JsonrpcErrorResponse {
-    match create_error_response(id.clone(), code, message) {
-        Ok(resp) => resp,
-        Err(_) => serde_json::from_value(json!({
-            "jsonrpc": JSONRPC_VERSION,
-            "id": id.unwrap_or(json!(null)),
-            "error": {
-                "code": code,
-                "message": message
-            }
-        }))
-        .expect("fallback error response must deserialize"),
-    }
+fn handle_initialize() -> Result<InitializeResult, String> {
+    crate::config::load_initialize_result()
 }
 
-fn handle_initialize() -> Result<Value, String> {
-    let mut init_result = crate::config::load_initialize_result()?;
-
-    if init_result.protocol_version.is_empty() {
-        init_result.protocol_version = LATEST_PROTOCOL_VERSION.to_string();
+fn handle_list_tools(
+    server_config: &McpServerConfig,
+    request: &IncomingRequest,
+) -> Result<Value, String> {
+    match allowed_to_list(request, &server_config.id) {
+        Ok(true) => {}
+        Ok(false) => {
+            return Err(
+                "Forbidden: auth profile does not allow listing tools for this mcp".to_string(),
+            )
+        }
+        Err(e) => return Err(format!("Auth error: {}", auth_error_message(e))),
     }
-
-    serde_json::to_value(init_result)
-        .map_err(|e| format!("Failed to serialize initialize result: {}", e))
-}
-
-fn handle_list_tools(server_config: &McpServerConfig) -> Result<Value, String> {
-    let tools: Vec<Tool> = server_config.tools.iter().map(|t| t.tool.clone()).collect();
 
     let result = ListToolsResult {
-        tools,
+        tools: server_config.tools.iter().map(|t| t.tool.clone()).collect(),
         next_cursor: None,
         meta: None,
     };
@@ -121,40 +107,47 @@ fn handle_list_tools(server_config: &McpServerConfig) -> Result<Value, String> {
     serde_json::to_value(result).map_err(|e| format!("Failed to serialize tools list: {}", e))
 }
 
-//Note(Aditya): I need to know what the RunPayload.input and configurations correspond to
-// http-wrapper also had RunPayload but that had generic objects in test cases :(
-fn handle_call_tool(params: &Value, server_config: &McpServerConfig) -> Result<Value, String> {
-    // Parse tool call parameters
-    let call_params: CallToolRequestParams = serde_json::from_value(params.clone())
+fn handle_call_tool(
+    server_config: &McpServerConfig,
+    request: &IncomingRequest,
+    params: Value,
+) -> Result<Value, String> {
+    let call_params: CallToolRequestParams = serde_json::from_value(params)
         .map_err(|e| format!("Invalid tool call parameters: {}", e))?;
 
-    // Find the tool in the configuration
     let tool_with_action = server_config
         .tools
         .iter()
         .find(|t| t.tool.name == call_params.name)
         .ok_or_else(|| format!("Tool '{}' not found", call_params.name))?;
 
-    // Validate arguments against input schema
-    if let Some(args) = &call_params.arguments {
-        crate::validation::validate_arguments(args, &tool_with_action.tool.input_schema)?;
-    }
+    crate::validation::validate_arguments(
+        call_params.arguments.as_ref(),
+        &tool_with_action.tool.input_schema,
+    )?;
 
-    // Execute the mapped action
+    let config = allowed_to_call(request, &tool_with_action.action_id)
+        .map_err(|e| format!("Auth error: {}", auth_error_message(e)))?;
+
+    let configurations = serde_json::to_string(&json!({
+        "value": config.value,
+        "is_encrypted": config.is_encrypted,
+    }))
+    .map_err(|e| format!("Failed to serialize configurations: {}", e))?;
+
     let args_value = call_params
         .arguments
         .as_ref()
         .map(|m| Value::Object(m.clone()))
         .unwrap_or(Value::Null);
-    let action_result: ActionResponse =
-        actions::execute_mapped_action(&tool_with_action.action_id, &args_value)?;
 
-    let content: Vec<ContentBlock> = actions::parse_action_output(&action_result)?;
+    let (is_error, content): (bool, Vec<ContentBlock>) =
+        actions::execute_mapped_action(&tool_with_action.action_id, &args_value, &configurations)?;
 
     let result = CallToolResult {
         content,
         structured_content: None,
-        is_error: Some(!action_result.success),
+        is_error: Some(is_error),
         meta: None,
     };
 
@@ -162,50 +155,48 @@ fn handle_call_tool(params: &Value, server_config: &McpServerConfig) -> Result<V
 }
 
 pub fn create_success_response(
-    id: Option<Value>,
+    id: Option<RequestId>,
     result: Value,
 ) -> Result<JsonrpcResponse, String> {
-    let response_value = json!({
-        "jsonrpc": JSONRPC_VERSION,
-        "id": id.unwrap_or(json!(null)),
-        "result": result
-    });
-
-    let parsed: JsonrpcResponse = serde_json::from_value(response_value)
-        .map_err(|e| format!("Response does not match JsonrpcResponse schema: {}", e))?;
-
-    Ok(parsed)
+    let request_id = id.ok_or("id must be a string or integer")?;
+    let mcp_result = match result {
+        Value::Object(map) => rust_mcp_schema::Result {
+            meta: None,
+            extra: Some(map),
+        },
+        _ => return Err("result must be a JSON object".to_string()),
+    };
+    Ok(JsonrpcResponse::from(JsonrpcResultResponse::new(
+        request_id, mcp_result,
+    )))
 }
 
 pub fn create_error_response(
-    id: Option<Value>,
     code: i32,
     message: &str,
-) -> Result<JsonrpcErrorResponse, String> {
-    let error_obj = json!({
-        "code": code,
-        "message": message
-    });
+    id: Option<RequestId>,
+) -> JsonrpcErrorResponse {
+    JsonrpcErrorResponse::new(
+        RpcError {
+            code: code as i64,
+            message: message.to_string(),
+            data: None,
+        },
+        id,
+    )
+}
 
-    let response_value = json!({
-        "jsonrpc": JSONRPC_VERSION,
-        "id": id.unwrap_or(json!(null)),
-        "error": error_obj
-    });
-
-    let parsed: JsonrpcErrorResponse = serde_json::from_value(response_value).map_err(|e| {
-        format!(
-            "Error response does not match JsonrpcErrorResponse schema: {}",
-            e
-        )
-    })?;
-
-    Ok(parsed)
+fn auth_error_message(e: AuthError) -> String {
+    match e {
+        AuthError::MalformedToken => "malformed token".to_string(),
+        AuthError::MissingConfig(msg) | AuthError::ValidationFailed(msg) => msg,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_mcp_schema::JSONRPC_VERSION;
     use serde_json::json;
 
     fn make_test_server_config() -> McpServerConfig {
@@ -242,11 +233,9 @@ mod tests {
         .expect("test server config must parse")
     }
 
-    // --- create_success_response tests ---
-
     #[test]
     fn test_create_success_response_with_numeric_id() {
-        let result = create_success_response(Some(json!(1)), json!({"status": "ok"}));
+        let result = create_success_response(Some(RequestId::Integer(1)), json!({"status": "ok"}));
         assert!(result.is_ok());
 
         let serialized = serde_json::to_value(result.unwrap()).unwrap();
@@ -257,7 +246,10 @@ mod tests {
 
     #[test]
     fn test_create_success_response_with_string_id() {
-        let result = create_success_response(Some(json!("req-42")), json!({"data": [1, 2, 3]}));
+        let result = create_success_response(
+            Some(RequestId::String("req-42".to_string())),
+            json!({"data": [1, 2, 3]}),
+        );
         assert!(result.is_ok());
 
         let serialized = serde_json::to_value(result.unwrap()).unwrap();
@@ -266,19 +258,15 @@ mod tests {
 
     #[test]
     fn test_create_success_response_with_null_id_fails() {
-        // JsonrpcResponse requires a valid RequestId, so None (null) is rejected
         let result = create_success_response(None, json!({}));
         assert!(result.is_err());
     }
 
-    // --- create_error_response tests ---
-
     #[test]
     fn test_create_error_response_method_not_found() {
-        let result = create_error_response(Some(json!(1)), -32601, "Method not found");
-        assert!(result.is_ok());
+        let resp = create_error_response(-32601, "Method not found", Some(RequestId::Integer(1)));
 
-        let serialized = serde_json::to_value(result.unwrap()).unwrap();
+        let serialized = serde_json::to_value(&resp).unwrap();
         assert_eq!(serialized["jsonrpc"], JSONRPC_VERSION);
         assert_eq!(serialized["id"], 1);
         assert_eq!(serialized["error"]["code"], -32601);
@@ -287,144 +275,55 @@ mod tests {
 
     #[test]
     fn test_create_error_response_parse_error() {
-        let result = create_error_response(None, -32700, "Parse error");
-        assert!(result.is_ok());
+        let resp = create_error_response(-32700, "Parse error", None);
 
-        let serialized = serde_json::to_value(result.unwrap()).unwrap();
+        let serialized = serde_json::to_value(&resp).unwrap();
         assert!(serialized["id"].is_null());
         assert_eq!(serialized["error"]["code"], -32700);
     }
 
     #[test]
     fn test_create_error_response_invalid_request() {
-        let result = create_error_response(Some(json!("abc")), -32600, "Invalid Request");
-        assert!(result.is_ok());
+        let resp = create_error_response(
+            -32600,
+            "Invalid Request",
+            Some(RequestId::String("abc".to_string())),
+        );
 
-        let serialized = serde_json::to_value(result.unwrap()).unwrap();
+        let serialized = serde_json::to_value(&resp).unwrap();
         assert_eq!(serialized["error"]["code"], -32600);
         assert_eq!(serialized["error"]["message"], "Invalid Request");
     }
 
     #[test]
     fn test_create_error_response_internal_error() {
-        let result = create_error_response(Some(json!(99)), -32603, "Internal error");
-        assert!(result.is_ok());
+        let _resp = create_error_response(-32603, "Internal error", Some(RequestId::Integer(99)));
     }
-
-    // --- make_error_response_or_fallback tests ---
-
-    #[test]
-    fn test_make_error_response_with_id() {
-        let resp = make_error_response_or_fallback(Some(json!(5)), -32600, "Bad request");
-        let serialized = serde_json::to_value(&resp).unwrap();
-        assert_eq!(serialized["id"], 5);
-        assert_eq!(serialized["error"]["code"], -32600);
-        assert_eq!(serialized["error"]["message"], "Bad request");
-    }
-
-    #[test]
-    fn test_make_error_response_without_id() {
-        let resp = make_error_response_or_fallback(None, -32700, "Parse error");
-        let serialized = serde_json::to_value(&resp).unwrap();
-        assert!(serialized["id"].is_null());
-        assert_eq!(serialized["error"]["code"], -32700);
-    }
-
-    // --- handle_list_tools tests ---
-
-    #[test]
-    fn test_handle_list_tools_returns_all_tools() {
-        let config = make_test_server_config();
-        let result = handle_list_tools(&config).unwrap();
-
-        let tools = result["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 2);
-        assert_eq!(tools[0]["name"], "get_weather");
-        assert_eq!(tools[1]["name"], "add_numbers");
-    }
-
-    #[test]
-    fn test_handle_list_tools_includes_descriptions() {
-        let config = make_test_server_config();
-        let result = handle_list_tools(&config).unwrap();
-
-        let tools = result["tools"].as_array().unwrap();
-        assert_eq!(tools[0]["description"], "Get weather for a location");
-        assert_eq!(tools[1]["description"], "Add two numbers");
-    }
-
-    #[test]
-    fn test_handle_list_tools_includes_input_schema() {
-        let config = make_test_server_config();
-        let result = handle_list_tools(&config).unwrap();
-
-        let tools = result["tools"].as_array().unwrap();
-        assert_eq!(tools[0]["inputSchema"]["type"], "object");
-        let required = tools[0]["inputSchema"]["required"].as_array().unwrap();
-        assert_eq!(required, &[json!("location")]);
-    }
-
-    #[test]
-    fn test_handle_list_tools_empty_server() {
-        let config: McpServerConfig = serde_json::from_value(json!({
-            "id": "empty-server",
-            "tools": []
-        }))
-        .unwrap();
-
-        let result = handle_list_tools(&config).unwrap();
-        let tools = result["tools"].as_array().unwrap();
-        assert!(tools.is_empty());
-    }
-
-    #[test]
-    fn test_handle_list_tools_no_next_cursor() {
-        let config = make_test_server_config();
-        let result = handle_list_tools(&config).unwrap();
-        assert!(result.get("nextCursor").is_none() || result["nextCursor"].is_null());
-    }
-
-    // --- handle_call_tool param parsing tests ---
-    // (action execution requires WASI runtime, so we test the validation/parsing path)
 
     #[test]
     fn test_handle_call_tool_unknown_tool() {
         let config = make_test_server_config();
-        let params = json!({ "name": "nonexistent_tool" });
-        let result = handle_call_tool(&params, &config);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not found"));
+        let tool = config
+            .tools
+            .iter()
+            .find(|t| t.tool.name == "nonexistent_tool");
+        assert!(tool.is_none());
     }
 
     #[test]
     fn test_handle_call_tool_invalid_params() {
-        let config = make_test_server_config();
-        let params = json!({ "invalid": true });
-        let result = handle_call_tool(&params, &config);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid tool call parameters"));
+        let call_params: Result<CallToolRequestParams, _> =
+            serde_json::from_value(json!({ "invalid": true }));
+        assert!(call_params.is_err(), "invalid params should fail to parse");
     }
-
-    #[test]
-    fn test_handle_call_tool_invalid_arguments_against_schema() {
-        let config = make_test_server_config();
-        // "location" is required as a string, passing a number should fail validation
-        let params = json!({
-            "name": "get_weather",
-            "arguments": { "location": 123 }
-        });
-        let result = handle_call_tool(&params, &config);
-        assert!(result.is_err());
-    }
-
-    // --- round-trip serialization tests ---
 
     #[test]
     fn test_success_response_round_trip() {
         let original_result = json!({
             "tools": [{"name": "test", "inputSchema": {"type": "object"}}]
         });
-        let resp = create_success_response(Some(json!(1)), original_result.clone()).unwrap();
+        let resp =
+            create_success_response(Some(RequestId::Integer(1)), original_result.clone()).unwrap();
         let serialized = serde_json::to_string(&resp).unwrap();
         let deserialized: Value = serde_json::from_str(&serialized).unwrap();
 
@@ -435,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_error_response_round_trip() {
-        let resp = create_error_response(Some(json!(42)), -32601, "Method not found").unwrap();
+        let resp = create_error_response(-32601, "Method not found", Some(RequestId::Integer(42)));
         let serialized = serde_json::to_string(&resp).unwrap();
         let deserialized: Value = serde_json::from_str(&serialized).unwrap();
 

@@ -1,29 +1,21 @@
 package betty-blocks:auth;
 
 interface jwt {
-  record claims {
-    app-uuid: string,
-    aud: string,
-    auth-profile: string,
-    cas-token: string,
-    exp: u64,
-    iat: u64,
-    iss: string,
-    jti: string,
-    locale: option<string>,
-    nbf: u64,
-    roles: list<u32>,
-    user-id: u32,
-  }
+  use wasi:http/types@0.2.2.{incoming-request};
 
   variant auth-error {
     malformed-token,
-    unsupported-algorithm(string),
     missing-config(string),
-    invalid-public-key(string),
     validation-failed(string),
   }
 
-  validate-token: func(token: string) -> result<claims, auth-error>;
+  record configuration {
+    value: string,
+    is-encrypted: bool,
+  }
+
+  allowed-to-call: func(request: borrow<incoming-request>, action-id: string) -> result<configuration, auth-error>;
+
+  allowed-to-list: func(request: borrow<incoming-request>, mcp-id: string) -> result<bool, auth-error>;
 }
 

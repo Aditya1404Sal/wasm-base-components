@@ -1,6 +1,11 @@
 use rust_mcp_schema::Tool;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+
+#[derive(Deserialize)]
+pub struct McpServersConfig {
+    #[serde(rename = "mcp-servers")]
+    pub mcp_servers: Vec<McpServerConfig>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ToolWithAction {
@@ -14,11 +19,4 @@ pub struct ToolWithAction {
 pub struct McpServerConfig {
     pub id: String,
     pub tools: Vec<ToolWithAction>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ActionResponse {
-    pub success: bool,
-    pub data: Option<Value>,
-    pub error: Option<String>,
 }
