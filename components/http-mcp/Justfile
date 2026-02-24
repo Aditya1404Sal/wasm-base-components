@@ -5,8 +5,17 @@ build:
 test:
     cargo test --lib --bins
 
-integration-test:
-    cargo test --tests '*'
+build-test-fixtures:
+    wash build
+    cd tests/mock-actions && wash build
+    cd ../utilities/auth && wash build
+    mkdir -p tests/fixtures
+    cp build/mcp_component_s.wasm tests/fixtures/betty_mcp_component.wasm
+    cp tests/mock-actions/build/mock_actions_component_s.wasm tests/fixtures/mock_actions.wasm
+    cp ../utilities/auth/build/jwt_auth_component_s.wasm tests/fixtures/jwt_auth_component.wasm
+
+integration-test: build-test-fixtures
+    cargo test --test integration_test
 
 lint:
     cargo check

@@ -2,25 +2,20 @@ use crate::actions;
 use crate::betty_blocks::auth::jwt::{allowed_to_call, allowed_to_list, AuthError};
 use crate::config;
 use crate::types::*;
-use crate::wasi::http::types::IncomingRequest;
 use rust_mcp_schema::{
     CallToolRequestParams, CallToolResult, ContentBlock, InitializeResult, JsonrpcErrorResponse,
     JsonrpcRequest, JsonrpcResponse, JsonrpcResultResponse, ListToolsResult, RequestId, RpcError,
 };
 use serde_json::{json, Value};
 
+type Headers = Vec<(String, Vec<u8>)>;
+
 pub fn process_rpc(
     server_id: &str,
-    request: &IncomingRequest,
+    body: &str,
+    headers: &Headers,
 ) -> Result<JsonrpcResponse, JsonrpcErrorResponse> {
-    let body = match crate::read_request_body(request) {
-        Ok(b) => b,
-        Err(e) => {
-            return Err(create_error_response(-32700, &e, None));
-        }
-    };
-
-    let request_obj: JsonrpcRequest = match serde_json::from_str(&body) {
+    let request_obj: JsonrpcRequest = match serde_json::from_str(body) {
         Ok(r) => r,
         Err(e) => {
             return Err(create_error_response(
@@ -49,14 +44,14 @@ pub fn process_rpc(
             serde_json::to_value(r)
                 .map_err(|e| format!("Failed to serialize initialize result: {}", e))
         }),
-        "tools/list" => handle_list_tools(&server_config, request),
+        "tools/list" => handle_list_tools(&server_config, headers),
         "tools/call" => {
             let params = request_obj
                 .params
                 .as_ref()
                 .and_then(|p| serde_json::to_value(p).ok())
                 .unwrap_or(json!({}));
-            handle_call_tool(&server_config, request, params)
+            handle_call_tool(&server_config, headers, params)
         }
         _ => {
             return Err(create_error_response(
@@ -84,11 +79,8 @@ fn handle_initialize() -> Result<InitializeResult, String> {
     crate::config::load_initialize_result()
 }
 
-fn handle_list_tools(
-    server_config: &McpServerConfig,
-    request: &IncomingRequest,
-) -> Result<Value, String> {
-    match allowed_to_list(request, &server_config.id) {
+fn handle_list_tools(server_config: &McpServerConfig, headers: &Headers) -> Result<Value, String> {
+    match allowed_to_list(headers, &server_config.id) {
         Ok(true) => {}
         Ok(false) => {
             return Err(
@@ -109,7 +101,7 @@ fn handle_list_tools(
 
 fn handle_call_tool(
     server_config: &McpServerConfig,
-    request: &IncomingRequest,
+    headers: &Headers,
     params: Value,
 ) -> Result<Value, String> {
     let call_params: CallToolRequestParams = serde_json::from_value(params)
@@ -126,7 +118,7 @@ fn handle_call_tool(
         &tool_with_action.tool.input_schema,
     )?;
 
-    let config = allowed_to_call(request, &tool_with_action.action_id)
+    let config = allowed_to_call(headers, &tool_with_action.action_id)
         .map_err(|e| format!("Auth error: {}", auth_error_message(e)))?;
 
     let configurations = serde_json::to_string(&json!({

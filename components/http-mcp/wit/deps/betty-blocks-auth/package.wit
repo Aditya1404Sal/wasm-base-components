@@ -1,8 +1,6 @@
 package betty-blocks:auth;
 
 interface jwt {
-  use wasi:http/types@0.2.2.{incoming-request};
-
   variant auth-error {
     malformed-token,
     missing-config(string),
@@ -14,8 +12,10 @@ interface jwt {
     is-encrypted: bool,
   }
 
-  allowed-to-call: func(request: borrow<incoming-request>, action-id: string) -> result<configuration, auth-error>;
+  type request-headers = list<tuple<string, list<u8>>>;
 
-  allowed-to-list: func(request: borrow<incoming-request>, mcp-id: string) -> result<bool, auth-error>;
+  allowed-to-call: func(headers: request-headers, action-id: string) -> result<configuration, auth-error>;
+
+  allowed-to-list: func(headers: request-headers, mcp-id: string) -> result<bool, auth-error>;
 }
 

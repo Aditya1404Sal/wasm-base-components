@@ -63,7 +63,17 @@ fn handle_mcp_request(request: IncomingRequest, response_out: ResponseOutparam, 
         }
     };
 
-    match crate::mcp::process_rpc(&server_id, &request) {
+    let headers = request.headers().entries();
+
+    let body = match read_request_body(&request) {
+        Ok(b) => b,
+        Err(e) => {
+            send_json_rpc_error(response_out, 400, -32700, &e);
+            return;
+        }
+    };
+
+    match crate::mcp::process_rpc(&server_id, &body, &headers) {
         Ok(result) => match serde_json::to_string(&result) {
             Ok(body_str) => send_response(response_out, 200, body_str),
             Err(_) => {

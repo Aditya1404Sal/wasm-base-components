@@ -8,7 +8,8 @@ pub mod bindings {
 }
 
 use crate::bindings::exports::betty_blocks::auth::jwt::{AuthError, Configuration, Guest};
-use crate::bindings::wasi::http::types::IncomingRequest;
+
+type Headers = Vec<(String, Vec<u8>)>;
 
 struct Component;
 
@@ -57,8 +58,7 @@ fn load_mcps_config() -> Result<HashMap<String, ResourceAuthConfig>, AuthError> 
     load_config(CONFIG_KEY_MCPS)
 }
 
-fn extract_bearer_token(request: &IncomingRequest) -> Result<String, AuthError> {
-    let headers = request.headers().entries();
+fn extract_bearer_token(headers: &[(String, Vec<u8>)]) -> Result<String, AuthError> {
     let auth_value = headers
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
@@ -98,9 +98,9 @@ fn validate_hs256(token: &str, secret: &str) -> Result<(), AuthError> {
 }
 
 fn fetch_validated_profile(
-    request: &IncomingRequest,
+    headers: &[(String, Vec<u8>)],
 ) -> Result<(String, AuthProfileConfig), AuthError> {
-    let token = extract_bearer_token(request)?;
+    let token = extract_bearer_token(headers)?;
     let jwt_profile_id = peek_auth_profile_id(&token)?;
     let profiles = load_auth_profiles()?;
     let profile = profiles
@@ -112,23 +112,20 @@ fn fetch_validated_profile(
 }
 
 fn authenticate_and_check_profile(
-    request: &IncomingRequest,
+    headers: &[(String, Vec<u8>)],
     expected_profile_id: &str,
 ) -> Result<bool, AuthError> {
-    let (jwt_profile_id, _) = fetch_validated_profile(request)?;
+    let (jwt_profile_id, _) = fetch_validated_profile(headers)?;
     Ok(jwt_profile_id == expected_profile_id)
 }
 
 impl Guest for Component {
-    fn allowed_to_call(
-        request: &IncomingRequest,
-        action_id: String,
-    ) -> Result<Configuration, AuthError> {
+    fn allowed_to_call(headers: Headers, action_id: String) -> Result<Configuration, AuthError> {
         let actions = load_actions_config()?;
         let action_cfg = actions
             .get(&action_id)
             .ok_or_else(|| AuthError::ValidationFailed("Action not found in auth config".into()))?;
-        let (jwt_profile_id, profile) = fetch_validated_profile(request)?;
+        let (jwt_profile_id, profile) = fetch_validated_profile(&headers)?;
         if jwt_profile_id != action_cfg.authentication_profile_id {
             return Err(AuthError::ValidationFailed(
                 "Forbidden: auth profile does not allow this action".into(),
@@ -140,12 +137,12 @@ impl Guest for Component {
         })
     }
 
-    fn allowed_to_list(request: &IncomingRequest, mcp_id: String) -> Result<bool, AuthError> {
+    fn allowed_to_list(headers: Headers, mcp_id: String) -> Result<bool, AuthError> {
         let mcps = load_mcps_config()?;
         let mcp_cfg = mcps
             .get(&mcp_id)
             .ok_or_else(|| AuthError::ValidationFailed("MCP not found in auth config".into()))?;
-        authenticate_and_check_profile(request, &mcp_cfg.authentication_profile_id)
+        authenticate_and_check_profile(&headers, &mcp_cfg.authentication_profile_id)
     }
 }
 
@@ -182,6 +179,41 @@ mod tests {
         };
         let header = Header::new(Algorithm::HS256);
         encode(&header, &claims, &EncodingKey::from_secret(secret)).expect("encode failed")
+    }
+
+    fn make_auth_headers(token: &str) -> Vec<(String, Vec<u8>)> {
+        vec![(
+            "authorization".to_string(),
+            format!("Bearer {}", token).into_bytes(),
+        )]
+    }
+
+    #[test]
+    fn test_extract_bearer_token_valid() {
+        let headers = make_auth_headers("my-token");
+        let result = extract_bearer_token(&headers);
+        assert_eq!(result.unwrap(), "my-token");
+    }
+
+    #[test]
+    fn test_extract_bearer_token_missing() {
+        let headers: Vec<(String, Vec<u8>)> = vec![];
+        let result = extract_bearer_token(&headers);
+        assert!(matches!(result, Err(AuthError::MalformedToken)));
+    }
+
+    #[test]
+    fn test_extract_bearer_token_no_bearer_prefix() {
+        let headers = vec![("authorization".to_string(), b"Basic abc123".to_vec())];
+        let result = extract_bearer_token(&headers);
+        assert!(matches!(result, Err(AuthError::MalformedToken)));
+    }
+
+    #[test]
+    fn test_extract_bearer_token_null_value() {
+        let headers = make_auth_headers("null");
+        let result = extract_bearer_token(&headers);
+        assert!(matches!(result, Err(AuthError::MalformedToken)));
     }
 
     #[test]
