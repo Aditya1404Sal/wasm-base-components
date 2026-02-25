@@ -10,6 +10,7 @@ The components currenly include:
 - smtp
 - http-wrapper
 - log-to-stdout
+- logs-writer
 
 What it doesn't include:
 

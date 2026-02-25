@@ -85,6 +85,7 @@ jobs:
           mkdir -p helper/crud/build
           mkdir -p providers/smtp-provider/build
           mkdir -p helper/http-wrapper/build
+          mkdir -p helper/logs-writer/build
           mkdir -p target/wasm32-wasip2/release
 
           # Move provider artifacts (.par.gz files)
@@ -102,6 +103,9 @@ jobs:
 
           if [ -f artifacts/http-wrapper*.wasm ]; then
             cp artifacts/http-wrapper*.wasm helper/http-wrapper/build/http_wrapper.wasm
+          fi
+          if [ -f artifacts/logs-writer*.wasm ]; then
+            cp artifacts/logs-writer*.wasm helper/logs-writer/build/logs_writer.wasm
           fi
           if [ -f artifacts/log-to-stdout*.wasm ]; then
             cp artifacts/log-to-stdout*.wasm target/wasm32-wasip2/release/log_to_stdout.wasm
@@ -202,6 +206,27 @@ jobs:
 
           echo "Published: ${IMAGE_NAME}:${VERSION}"
 
+      - name: Publish logs-writer to registry
+        if: hashFiles('helper/logs-writer/build/logs_writer.wasm') != ''
+        run: |
+          IMAGE_NAME="$REGISTRY/$REPO_OWNER/logs-writer"
+
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${IMAGE_NAME}:${VERSION} \
+            ./helper/logs-writer/build/logs_writer.wasm
+
+          # Also tag as latest
+          wash push \
+            --user ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            --allow-latest \
+            ${IMAGE_NAME}:latest \
+            ./helper/logs-writer/build/logs_writer.wasm
+
+          echo "Published: ${IMAGE_NAME}:${VERSION}"
+
       - name: Publish log-to-stdout to registry
         if: hashFiles('target/wasm32-wasip2/release/log_to_stdout.wasm') != ''
         run: |
@@ -267,6 +292,14 @@ jobs:
             echo "  - \`${REGISTRY}/${REPO_OWNER}/http-wrapper:latest\`" >> $GITHUB_STEP_SUMMARY
           else
             echo "- ⏭️ http-wrapper (skipped)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f helper/logs-writer/build/logs_writer.wasm ]; then
+            echo "- ✅ **logs-writer**" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/logs-writer:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`${REGISTRY}/${REPO_OWNER}/logs-writer:latest\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ⏭️ logs-writer (skipped)" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ -f target/wasm32-wasip2/release/log_to_stdout.wasm ]; then
