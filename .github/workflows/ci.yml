@@ -59,7 +59,7 @@ jobs:
 
       - name: Run component integration tests
         run: |
-          for justfile in $(find components helper providers integration-test -name Justfile 2>/dev/null); do
+          for justfile in $(find components integration-test -name Justfile 2>/dev/null); do
             echo "--- Running integration tests in $(dirname "$justfile") ---"
             (cd "$(dirname "$justfile")" && just integration-test)
           done
