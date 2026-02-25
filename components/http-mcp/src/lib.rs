@@ -16,6 +16,7 @@ mod validation;
 
 use exports::wasi::http::incoming_handler::Guest as McpHandler;
 
+const PATH_PREFIX: &str = "/api/mcp/";
 pub(crate) const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024; // 10Mb
 
 struct Component;
@@ -28,7 +29,7 @@ impl McpHandler for Component {
 
 fn inner_handle(request: IncomingRequest, response_out: ResponseOutparam) {
     match (request.method(), request.path_with_query().as_deref()) {
-        (Method::Post, Some(path)) if path.starts_with("/mcp/") => {
+        (Method::Post, Some(path)) if path.starts_with(PATH_PREFIX) => {
             handle_mcp_request(request, response_out, path);
         }
         _ => {
@@ -39,7 +40,7 @@ fn inner_handle(request: IncomingRequest, response_out: ResponseOutparam) {
                     "jsonrpc": "2.0",
                     "error": {
                         "code": -32000,
-                        "message": "Method Not Allowed. Expected POST to /mcp/{server-id}"
+                        "message": format!("Method Not Allowed. Expected POST to {}{{server-id}}", PATH_PREFIX)
                     },
                     "id": null
                 })
@@ -90,30 +91,34 @@ fn handle_mcp_request(request: IncomingRequest, response_out: ResponseOutparam, 
 }
 
 fn validate_content_type(request: &IncomingRequest) -> Result<(), String> {
-    request
-        .headers()
-        .entries()
+    validate_content_type_from_headers(&request.headers().entries())
+}
+
+fn validate_content_type_from_headers(headers: &[(String, Vec<u8>)]) -> Result<(), String> {
+    headers
         .iter()
         .find(|(key, value)| {
             key.eq_ignore_ascii_case("content-type")
-                && String::from_utf8_lossy(value).contains("application/json")
+                && String::from_utf8_lossy(value)
+                    .trim()
+                    .starts_with("application/json")
         })
         .map(|_| ())
         .ok_or_else(|| "Content-Type must be application/json".to_string())
 }
 
 fn extract_server_id_from_path(path: &str) -> Result<String, String> {
-    let parts: Vec<&str> = path.split('/').collect();
+    let remainder = path
+        .strip_prefix(PATH_PREFIX)
+        .ok_or_else(|| format!("Invalid path format. Expected {PATH_PREFIX}{{server-id}}"))?;
 
-    if parts.len() >= 3 {
-        let server_id = parts[2].split('?').next().unwrap_or(parts[2]);
-        if server_id.is_empty() {
-            Err("Server ID cannot be empty. Expected /mcp/{server-id}".to_string())
-        } else {
-            Ok(server_id.to_string())
-        }
+    let server_id = remainder.split(['/', '?']).next().unwrap_or("");
+    if server_id.is_empty() {
+        Err(format!(
+            "Server ID cannot be empty. Expected {PATH_PREFIX}{{server-id}}"
+        ))
     } else {
-        Err("Invalid path format. Expected /mcp/{server-id}".to_string())
+        Ok(server_id.to_string())
     }
 }
 
@@ -199,32 +204,32 @@ mod tests {
 
     #[test]
     fn test_extract_server_id_valid() {
-        let result = extract_server_id_from_path("/mcp/weather-server-001");
+        let result = extract_server_id_from_path("/api/mcp/weather-server-001");
         assert_eq!(result.unwrap(), "weather-server-001");
     }
 
     #[test]
     fn test_extract_server_id_with_query_params() {
-        let result = extract_server_id_from_path("/mcp/server-123?key=value");
+        let result = extract_server_id_from_path("/api/mcp/server-123?key=value");
         assert_eq!(result.unwrap(), "server-123");
     }
 
     #[test]
     fn test_extract_server_id_with_trailing_path() {
-        let result = extract_server_id_from_path("/mcp/server-123/extra/path");
+        let result = extract_server_id_from_path("/api/mcp/server-123/extra/path");
         assert_eq!(result.unwrap(), "server-123");
     }
 
     #[test]
     fn test_extract_server_id_empty() {
-        let result = extract_server_id_from_path("/mcp/");
+        let result = extract_server_id_from_path("/api/mcp/");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Server ID cannot be empty"));
     }
 
     #[test]
     fn test_extract_server_id_too_short() {
-        let result = extract_server_id_from_path("/mcp");
+        let result = extract_server_id_from_path("/api/mcp");
         assert!(result.is_err());
     }
 
@@ -232,5 +237,52 @@ mod tests {
     fn test_extract_server_id_root_path() {
         let result = extract_server_id_from_path("/");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_content_type_valid() {
+        let headers = vec![("content-type".to_string(), b"application/json".to_vec())];
+        assert!(validate_content_type_from_headers(&headers).is_ok());
+    }
+
+    #[test]
+    fn test_validate_content_type_with_charset() {
+        let headers = vec![(
+            "Content-Type".to_string(),
+            b"application/json; charset=utf-8".to_vec(),
+        )];
+        assert!(validate_content_type_from_headers(&headers).is_ok());
+    }
+
+    #[test]
+    fn test_validate_content_type_case_insensitive_key() {
+        let headers = vec![("CONTENT-TYPE".to_string(), b"application/json".to_vec())];
+        assert!(validate_content_type_from_headers(&headers).is_ok());
+    }
+
+    #[test]
+    fn test_validate_content_type_missing() {
+        let headers: Vec<(String, Vec<u8>)> = vec![];
+        let result = validate_content_type_from_headers(&headers);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Content-Type must be application/json"));
+    }
+
+    #[test]
+    fn test_validate_content_type_wrong_type() {
+        let headers = vec![("content-type".to_string(), b"text/plain".to_vec())];
+        assert!(validate_content_type_from_headers(&headers).is_err());
+    }
+
+    #[test]
+    fn test_validate_content_type_among_other_headers() {
+        let headers = vec![
+            ("authorization".to_string(), b"Bearer token".to_vec()),
+            ("content-type".to_string(), b"application/json".to_vec()),
+            ("accept".to_string(), b"*/*".to_vec()),
+        ];
+        assert!(validate_content_type_from_headers(&headers).is_ok());
     }
 }

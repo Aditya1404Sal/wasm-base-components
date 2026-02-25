@@ -7,7 +7,7 @@ pub mod bindings {
     wit_bindgen::generate!({ generate_all });
 }
 
-use crate::bindings::exports::betty_blocks::auth::jwt::{AuthError, Configuration, Guest};
+use crate::bindings::exports::betty_blocks::auth::jwt::{AuthError, Guest};
 
 type Headers = Vec<(String, Vec<u8>)>;
 
@@ -25,6 +25,7 @@ struct JwtPayload {
 #[derive(Deserialize)]
 struct AuthProfileConfig {
     value: String,
+    #[allow(unused)]
     is_encrypted: bool,
 }
 
@@ -120,21 +121,18 @@ fn authenticate_and_check_profile(
 }
 
 impl Guest for Component {
-    fn allowed_to_call(headers: Headers, action_id: String) -> Result<Configuration, AuthError> {
+    fn allowed_to_call(headers: Headers, action_id: String) -> Result<bool, AuthError> {
         let actions = load_actions_config()?;
         let action_cfg = actions
             .get(&action_id)
             .ok_or_else(|| AuthError::ValidationFailed("Action not found in auth config".into()))?;
-        let (jwt_profile_id, profile) = fetch_validated_profile(&headers)?;
+        let (jwt_profile_id, _profile) = fetch_validated_profile(&headers)?;
         if jwt_profile_id != action_cfg.authentication_profile_id {
             return Err(AuthError::ValidationFailed(
                 "Forbidden: auth profile does not allow this action".into(),
             ));
         }
-        Ok(Configuration {
-            value: profile.value,
-            is_encrypted: profile.is_encrypted,
-        })
+        Ok(true)
     }
 
     fn allowed_to_list(headers: Headers, mcp_id: String) -> Result<bool, AuthError> {

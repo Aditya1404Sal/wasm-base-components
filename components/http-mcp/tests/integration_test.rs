@@ -6,7 +6,7 @@
 //! 3. JSON-RPC request handling (initialize, tools/list, tools/call)
 //! 4. Action execution via mock-actions component
 //!
-//! Run via: `just integration-test` (builds fixtures first)
+//! Fixtures are automatically built by build.rs before tests run.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -23,7 +23,7 @@ use wash_runtime::{
         http::{DevRouter, HttpServer},
         Host, HostApi, HostBuilder,
     },
-    plugin::wasi_config::WasiConfig,
+    plugin::wasi_config::DynamicConfig,
     types::{Component, LocalResources, Workload, WorkloadStartRequest},
     wit::WitInterface,
 };
@@ -33,7 +33,7 @@ mod common;
 use common::find_available_port;
 
 // ============ WASM Fixtures ============
-// Build with: just build-test-fixtures
+// Automatically built by build.rs via `wash build`
 
 const BETTY_MCP_COMPONENT_WASM: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -122,6 +122,9 @@ fn mcp_component_config() -> HashMap<String, String> {
         (
             "mcp_servers".to_string(),
             json!({
+                "actions": {
+                    TEST_ACTION_ID: { "authentication-profile-id": TEST_PROFILE_ID }
+                },
                 "mcp-servers": [
                     {
                         "id": TEST_SERVER_ID,
@@ -140,7 +143,10 @@ fn mcp_component_config() -> HashMap<String, String> {
                             }
                         ]
                     }
-                ]
+                ],
+                "mcps": {
+                    TEST_SERVER_ID: { "authentication-profile-id": TEST_PROFILE_ID }
+                }
             })
             .to_string(),
         ),
@@ -166,11 +172,11 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
 
     let engine = Engine::builder().build()?;
-    let http_plugin = HttpServer::new(DevRouter::default(), addr);
+    let http_plugin = HttpServer::new(DevRouter::default(), addr).await?;
     let host = HostBuilder::new()
         .with_engine(engine)
         .with_http_handler(Arc::new(http_plugin))
-        .with_plugin(Arc::new(WasiConfig::default()))?
+        .with_plugin(Arc::new(DynamicConfig::default()))?
         .build()?
         .start()
         .await
@@ -185,7 +191,9 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
             service: None,
             components: vec![
                 Component {
+                    name: "mcp".to_string(),
                     bytes: bytes::Bytes::from_static(BETTY_MCP_COMPONENT_WASM),
+                    digest: None,
                     local_resources: LocalResources {
                         memory_limit_mb: 256,
                         cpu_limit: 1,
@@ -198,7 +206,9 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
                     max_invocations: 100,
                 },
                 Component {
+                    name: "jwt-auth".to_string(),
                     bytes: bytes::Bytes::from_static(JWT_AUTH_COMPONENT_WASM),
+                    digest: None,
                     local_resources: LocalResources {
                         memory_limit_mb: 128,
                         cpu_limit: 1,
@@ -211,7 +221,9 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
                     max_invocations: 100,
                 },
                 Component {
+                    name: "mock-actions".to_string(),
                     bytes: bytes::Bytes::from_static(MOCK_ACTIONS_WASM),
+                    digest: None,
                     local_resources: LocalResources {
                         memory_limit_mb: 128,
                         cpu_limit: 1,
@@ -268,7 +280,7 @@ async fn rpc(
     body: serde_json::Value,
 ) -> Result<serde_json::Value> {
     let mut req = client()
-        .post(format!("http://{addr}/mcp/{TEST_SERVER_ID}"))
+        .post(format!("http://{addr}/api/mcp/{TEST_SERVER_ID}"))
         .header("Content-Type", "application/json");
     if let Some(t) = token {
         req = req.header("Authorization", format!("Bearer {t}"));
@@ -284,15 +296,16 @@ async fn rpc(
 
 // ============ Tests ============
 
-/// Happy path: initialize (no auth), tools/list, and tools/call all succeed.
+/// Happy path: initialize, tools/list, and tools/call all succeed with valid auth.
 #[tokio::test]
 async fn test_happy_path() -> Result<()> {
     let (_host, addr) = setup().await?;
+    let token = valid_token();
 
-    // initialize does not check auth
+    // initialize — requires auth (all endpoints are gated)
     let body = rpc(
         addr,
-        None,
+        Some(&token),
         json!({
             "jsonrpc": "2.0",
             "method": "initialize",
@@ -303,8 +316,6 @@ async fn test_happy_path() -> Result<()> {
     .await?;
     assert_eq!(body["jsonrpc"], "2.0");
     assert!(body["result"]["serverInfo"].is_object(), "body: {body}");
-
-    let token = valid_token();
 
     // tools/list
     let body = rpc(
@@ -339,14 +350,26 @@ async fn test_happy_path() -> Result<()> {
 }
 
 /// Auth failures all return a JSON-RPC error body (HTTP 200).
-/// tools/list is used because initialize skips auth.
+/// All endpoints are gated by auth, including initialize.
 #[tokio::test]
 async fn test_auth_failures() -> Result<()> {
     let (_host, addr) = setup().await?;
 
     let list_req = || json!({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1});
 
-    // no token
+    // no token — initialize is also rejected
+    let body = rpc(
+        addr,
+        None,
+        json!({"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}),
+    )
+    .await?;
+    assert!(
+        body["error"].is_object(),
+        "expected error for initialize without token, body: {body}"
+    );
+
+    // no token — tools/list
     let body = rpc(addr, None, list_req()).await?;
     assert!(
         body["error"].is_object(),
@@ -402,7 +425,7 @@ async fn test_error_handling() -> Result<()> {
     let response = timeout(
         Duration::from_secs(10),
         client()
-            .post(format!("http://{addr}/mcp/nonexistent-server-999"))
+            .post(format!("http://{addr}/api/mcp/nonexistent-server-999"))
             .header("Content-Type", "application/json")
             .json(&json!({"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}))
             .send(),
@@ -417,7 +440,7 @@ async fn test_error_handling() -> Result<()> {
     let status = timeout(
         Duration::from_secs(10),
         client()
-            .get(format!("http://{addr}/mcp/{TEST_SERVER_ID}"))
+            .get(format!("http://{addr}/api/mcp/{TEST_SERVER_ID}"))
             .send(),
     )
     .await

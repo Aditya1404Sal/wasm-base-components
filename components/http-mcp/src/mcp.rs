@@ -3,10 +3,10 @@ use crate::betty_blocks::auth::jwt::{allowed_to_call, allowed_to_list, AuthError
 use crate::config;
 use crate::types::*;
 use rust_mcp_schema::{
-    CallToolRequestParams, CallToolResult, ContentBlock, InitializeResult, JsonrpcErrorResponse,
-    JsonrpcRequest, JsonrpcResponse, JsonrpcResultResponse, ListToolsResult, RequestId, RpcError,
+    CallToolRequestParams, CallToolResult, ContentBlock, JsonrpcErrorResponse, JsonrpcRequest,
+    JsonrpcResponse, JsonrpcResultResponse, ListToolsResult, RequestId, RpcError,
 };
-use serde_json::{json, Value};
+use serde_json::Value;
 
 type Headers = Vec<(String, Vec<u8>)>;
 
@@ -39,20 +39,14 @@ pub fn process_rpc(
         }
     };
 
+    let params = request_obj
+        .params
+        .and_then(|p| serde_json::to_value(p).ok());
+
     let result = match request_obj.method.as_str() {
-        "initialize" => handle_initialize().and_then(|r| {
-            serde_json::to_value(r)
-                .map_err(|e| format!("Failed to serialize initialize result: {}", e))
-        }),
-        "tools/list" => handle_list_tools(&server_config, headers),
-        "tools/call" => {
-            let params = request_obj
-                .params
-                .as_ref()
-                .and_then(|p| serde_json::to_value(p).ok())
-                .unwrap_or(json!({}));
-            handle_call_tool(&server_config, headers, params)
-        }
+        "initialize" => handle_initialize(headers, &server_config),
+        "tools/list" => handle_list_tools(headers, &server_config),
+        "tools/call" => handle_call_tool(&server_config, headers, params),
         _ => {
             return Err(create_error_response(
                 -32601,
@@ -75,21 +69,23 @@ pub fn process_rpc(
     }
 }
 
-fn handle_initialize() -> Result<InitializeResult, String> {
-    crate::config::load_initialize_result()
+fn check_allowed_to_list(headers: &Headers, server_id: &str) -> Result<(), String> {
+    match allowed_to_list(headers, server_id) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("Forbidden: auth profile does not allow access to this mcp".to_string()),
+        Err(e) => Err(format!("Auth error: {}", auth_error_message(e))),
+    }
 }
 
-fn handle_list_tools(server_config: &McpServerConfig, headers: &Headers) -> Result<Value, String> {
-    match allowed_to_list(headers, &server_config.id) {
-        Ok(true) => {}
-        Ok(false) => {
-            return Err(
-                "Forbidden: auth profile does not allow listing tools for this mcp".to_string(),
-            )
-        }
-        Err(e) => return Err(format!("Auth error: {}", auth_error_message(e))),
-    }
+fn handle_initialize(headers: &Headers, server_config: &McpServerConfig) -> Result<Value, String> {
+    check_allowed_to_list(headers, &server_config.id)?;
+    let result = crate::config::load_initialize_result()?;
+    serde_json::to_value(result)
+        .map_err(|e| format!("Failed to serialize initialize result: {}", e))
+}
 
+fn handle_list_tools(headers: &Headers, server_config: &McpServerConfig) -> Result<Value, String> {
+    check_allowed_to_list(headers, &server_config.id)?;
     let result = ListToolsResult {
         tools: server_config.tools.iter().map(|t| t.tool.clone()).collect(),
         next_cursor: None,
@@ -102,8 +98,9 @@ fn handle_list_tools(server_config: &McpServerConfig, headers: &Headers) -> Resu
 fn handle_call_tool(
     server_config: &McpServerConfig,
     headers: &Headers,
-    params: Value,
+    params: Option<Value>,
 ) -> Result<Value, String> {
+    let params = params.ok_or("Missing params for tools/call")?;
     let call_params: CallToolRequestParams = serde_json::from_value(params)
         .map_err(|e| format!("Invalid tool call parameters: {}", e))?;
 
@@ -118,14 +115,11 @@ fn handle_call_tool(
         &tool_with_action.tool.input_schema,
     )?;
 
-    let config = allowed_to_call(headers, &tool_with_action.action_id)
+    allowed_to_call(headers, &tool_with_action.action_id)
         .map_err(|e| format!("Auth error: {}", auth_error_message(e)))?;
 
-    let configurations = serde_json::to_string(&json!({
-        "value": config.value,
-        "is_encrypted": config.is_encrypted,
-    }))
-    .map_err(|e| format!("Failed to serialize configurations: {}", e))?;
+    // TODO(Configurations fetching TBD)
+    let configurations = "{}".to_string();
 
     let args_value = call_params
         .arguments
@@ -307,6 +301,65 @@ mod tests {
         let call_params: Result<CallToolRequestParams, _> =
             serde_json::from_value(json!({ "invalid": true }));
         assert!(call_params.is_err(), "invalid params should fail to parse");
+    }
+
+    #[test]
+    fn test_handle_call_tool_missing_params() {
+        let config = make_test_server_config();
+        let headers: Headers = vec![];
+        let result = handle_call_tool(&config, &headers, None);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Missing params for tools/call");
+    }
+
+    #[test]
+    fn test_handle_call_tool_empty_object_params() {
+        let config = make_test_server_config();
+        let headers: Headers = vec![];
+        let result = handle_call_tool(&config, &headers, Some(json!({})));
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("Invalid tool call parameters"),
+            "empty object should fail because 'name' is required"
+        );
+    }
+
+    #[test]
+    fn test_call_tool_params_name_only() {
+        let call_params: CallToolRequestParams =
+            serde_json::from_value(json!({ "name": "some_tool" })).unwrap();
+        assert_eq!(call_params.name, "some_tool");
+        assert!(
+            call_params.arguments.is_none(),
+            "arguments should be None when omitted"
+        );
+    }
+
+    #[test]
+    fn test_call_tool_params_with_arguments() {
+        let call_params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "some_tool",
+            "arguments": { "key": "value", "count": 42 }
+        }))
+        .unwrap();
+        assert_eq!(call_params.name, "some_tool");
+        let args = call_params.arguments.unwrap();
+        assert_eq!(args["key"], "value");
+        assert_eq!(args["count"], 42);
+    }
+
+    #[test]
+    fn test_call_tool_params_without_arguments() {
+        let call_params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "some_tool",
+            "arguments": {}
+        }))
+        .unwrap();
+        assert_eq!(call_params.name, "some_tool");
+        assert!(
+            call_params.arguments.unwrap().is_empty(),
+            "arguments should be an empty map when passed as {{}}"
+        );
     }
 
     #[test]

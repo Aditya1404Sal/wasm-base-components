@@ -13,10 +13,6 @@ impl Guest for Component {
             result: r#"{"output": "mock action executed successfully"}"#.to_string(),
         })
     }
-
-    fn health() -> Result<String, String> {
-        Ok("healthy".to_string())
-    }
 }
 
 bindings::export!(Component with_types_in bindings);

@@ -7,14 +7,9 @@ interface jwt {
     validation-failed(string),
   }
 
-  record configuration {
-    value: string,
-    is-encrypted: bool,
-  }
-
   type request-headers = list<tuple<string, list<u8>>>;
 
-  allowed-to-call: func(headers: request-headers, action-id: string) -> result<configuration, auth-error>;
+  allowed-to-call: func(headers: request-headers, action-id: string) -> result<bool, auth-error>;
 
   allowed-to-list: func(headers: request-headers, mcp-id: string) -> result<bool, auth-error>;
 }

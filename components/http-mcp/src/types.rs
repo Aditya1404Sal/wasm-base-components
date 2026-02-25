@@ -2,16 +2,16 @@ use rust_mcp_schema::Tool;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct McpServersConfig {
-    #[serde(rename = "mcp-servers")]
     pub mcp_servers: Vec<McpServerConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
 pub struct ToolWithAction {
     #[serde(flatten)]
     pub tool: Tool,
-    #[serde(rename = "action-id")]
     pub action_id: String,
 }
 

@@ -224,6 +224,24 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_no_arguments_empty_schema() {
+        // Tool that expects no input at all — schema has no properties and no required fields
+        let schema = schema_from_json(json!({
+            "type": "object"
+        }));
+        assert!(
+            validate_arguments(None, &schema).is_ok(),
+            "None arguments should pass when schema expects no input"
+        );
+
+        let empty_obj = json!({});
+        assert!(
+            validate_arguments(Some(empty_obj.as_object().unwrap()), &schema).is_ok(),
+            "empty object should also pass when schema expects no input"
+        );
+    }
+
+    #[test]
     fn test_validate_type_mismatch() {
         let schema = schema_from_json(json!({
             "type": "object",
