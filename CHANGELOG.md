@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.3.3...v1.4.0) (2026-02-25)
+
+
+### Features
+
+* implement debug logging component ([d6142a3](https://github.com/bettyblocks/wasm-base-components/commit/d6142a3b3be5f48148b91809aa464d878d0543ff))
+
 ## [1.3.3](https://github.com/bettyblocks/wasm-base-components/compare/v1.3.2...v1.3.3) (2026-01-30)
 
 
