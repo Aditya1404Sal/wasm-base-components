@@ -83,6 +83,7 @@ jobs:
           name: wasm-components-v${{ env.VERSION }}
           path: ./artifacts
           if_no_artifact_found: fail
+          search_artifacts: true
 
       - name: Organize artifacts
         run: |
