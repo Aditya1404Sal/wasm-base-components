@@ -68,4 +68,7 @@ format-ci:
         just --working-directory "$dir" --justfile "$justfile" formatting --check
     done
 
+integration-test:
+    cd integration-test && cargo test -- --nocapture
+
 all: test-all lint-all clippy-all format-all

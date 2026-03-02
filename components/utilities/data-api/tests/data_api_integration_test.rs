@@ -38,11 +38,11 @@ use common::find_available_port;
 
 const DATA_API_COMPONENT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/target/wasm32-wasip2/release/deps/data_api_component.wasm"
+    "/tests/fixtures/data_api_component.wasm"
 ));
 const TEST_COMPONENT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/test-component/target/wasm32-wasip2/release/deps/test_component.wasm"
+    "/tests/fixtures/test_component.wasm"
 ));
 
 const GRPC_HOST_HEADER: &str = "grpc";

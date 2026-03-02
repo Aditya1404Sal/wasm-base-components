@@ -273,7 +273,6 @@ fn client() -> reqwest::Client {
     reqwest::Client::new()
 }
 
-/// Send a JSON-RPC request to the test server and return the parsed response body.
 async fn rpc(
     addr: SocketAddr,
     token: Option<&str>,
@@ -296,13 +295,11 @@ async fn rpc(
 
 // ============ Tests ============
 
-/// Happy path: initialize, tools/list, and tools/call all succeed with valid auth.
 #[tokio::test]
 async fn test_happy_path() -> Result<()> {
     let (_host, addr) = setup().await?;
     let token = valid_token();
 
-    // initialize — requires auth (all endpoints are gated)
     let body = rpc(
         addr,
         Some(&token),
@@ -317,7 +314,6 @@ async fn test_happy_path() -> Result<()> {
     assert_eq!(body["jsonrpc"], "2.0");
     assert!(body["result"]["serverInfo"].is_object(), "body: {body}");
 
-    // tools/list
     let body = rpc(
         addr,
         Some(&token),
@@ -331,7 +327,6 @@ async fn test_happy_path() -> Result<()> {
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(names.contains(&"get_weather"), "body: {body}");
 
-    // tools/call
     let body = rpc(
         addr,
         Some(&token),
@@ -349,15 +344,12 @@ async fn test_happy_path() -> Result<()> {
     Ok(())
 }
 
-/// Auth failures all return a JSON-RPC error body (HTTP 200).
-/// All endpoints are gated by auth, including initialize.
 #[tokio::test]
 async fn test_auth_failures() -> Result<()> {
     let (_host, addr) = setup().await?;
 
     let list_req = || json!({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 1});
 
-    // no token — initialize is also rejected
     let body = rpc(
         addr,
         None,
@@ -369,14 +361,12 @@ async fn test_auth_failures() -> Result<()> {
         "expected error for initialize without token, body: {body}"
     );
 
-    // no token — tools/list
     let body = rpc(addr, None, list_req()).await?;
     assert!(
         body["error"].is_object(),
         "expected error for missing token, body: {body}"
     );
 
-    // token signed with wrong secret
     let wrong_token = make_token(WRONG_SECRET, TEST_PROFILE_ID, 3600);
     let body = rpc(addr, Some(&wrong_token), list_req()).await?;
     assert!(
@@ -384,7 +374,6 @@ async fn test_auth_failures() -> Result<()> {
         "expected error for wrong secret, body: {body}"
     );
 
-    // expired token (1 hour ago, well outside the 30s leeway)
     let expired_token = make_token(TEST_SECRET, TEST_PROFILE_ID, -3600);
     let body = rpc(addr, Some(&expired_token), list_req()).await?;
     assert!(
@@ -395,17 +384,13 @@ async fn test_auth_failures() -> Result<()> {
     Ok(())
 }
 
-/// Protocol and routing errors: invalid JSON-RPC, unknown method,
-/// non-existent server, wrong HTTP method.
 #[tokio::test]
 async fn test_error_handling() -> Result<()> {
     let (_host, addr) = setup().await?;
 
-    // invalid JSON-RPC body
     let body = rpc(addr, None, json!({"not_jsonrpc": "invalid"})).await?;
     assert!(body["error"].is_object(), "body: {body}");
 
-    // unknown method — returns -32601
     let body = rpc(
         addr,
         Some(&valid_token()),
@@ -421,7 +406,6 @@ async fn test_error_handling() -> Result<()> {
         "body: {body}"
     );
 
-    // non-existent server ID
     let response = timeout(
         Duration::from_secs(10),
         client()
@@ -436,7 +420,6 @@ async fn test_error_handling() -> Result<()> {
     let body: serde_json::Value = response.json().await?;
     assert!(body["error"].is_object(), "body: {body}");
 
-    // wrong HTTP method — GET returns 405
     let status = timeout(
         Duration::from_secs(10),
         client()

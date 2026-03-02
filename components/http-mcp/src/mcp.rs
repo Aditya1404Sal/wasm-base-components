@@ -39,9 +39,12 @@ pub fn process_rpc(
         }
     };
 
-    let params = request_obj
-        .params
-        .and_then(|p| serde_json::to_value(p).ok());
+    let params = match request_obj.params {
+        Some(p) => Some(serde_json::to_value(p).map_err(|e| {
+            create_error_response(-32600, &format!("Invalid params: {}", e), id.clone())
+        })?),
+        None => None,
+    };
 
     let result = match request_obj.method.as_str() {
         "initialize" => handle_initialize(headers, &server_config),
@@ -115,8 +118,13 @@ fn handle_call_tool(
         &tool_with_action.tool.input_schema,
     )?;
 
-    allowed_to_call(headers, &tool_with_action.action_id)
-        .map_err(|e| format!("Auth error: {}", auth_error_message(e)))?;
+    match allowed_to_call(headers, &tool_with_action.action_id) {
+        Ok(true) => {}
+        Ok(false) => {
+            return Err("Forbidden: auth profile does not allow calling this tool".to_string())
+        }
+        Err(e) => return Err(format!("Auth error: {}", auth_error_message(e))),
+    }
 
     // TODO(Configurations fetching TBD)
     let configurations = "{}".to_string();

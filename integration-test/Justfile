@@ -1,0 +1,18 @@
+
+build:
+    @echo "integration-test: no standalone build step (build.rs handles fixtures)"
+
+test:
+    @echo "integration-test: use 'just integration-test' to run tests"
+
+integration-test:
+    cargo test -- --nocapture
+
+lint:
+    cargo check
+
+formatting *args:
+    cargo fmt --all {{args}}
+
+clippy:
+    cargo clippy --all-targets --all-features -- -D warnings
