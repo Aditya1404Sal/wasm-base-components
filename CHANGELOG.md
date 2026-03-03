@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/bettyblocks/wasm-base-components/compare/v1.5.0...v1.5.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* correct implementation of initialize ([2620360](https://github.com/bettyblocks/wasm-base-components/commit/2620360d917a91ae1dbf5f7d8d8caf71e09a9f37))
+
 # [1.5.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.4.0...v1.5.0) (2026-03-03)
 
 
