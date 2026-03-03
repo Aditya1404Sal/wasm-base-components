@@ -1,7 +1,5 @@
 use serde_json::json;
-use wasi::http::types::{
-    Fields, IncomingRequest, Method, OutgoingBody, OutgoingResponse, ResponseOutparam,
-};
+use wstd::http::{Body, HeaderMap, Method, Request, Response, StatusCode};
 
 wit_bindgen::generate!({
     world: "mcp",
@@ -14,100 +12,132 @@ mod mcp;
 mod types;
 mod validation;
 
-use exports::wasi::http::incoming_handler::Guest as McpHandler;
-
 const PATH_PREFIX: &str = "/api/mcp/";
-pub(crate) const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024; // 10Mb
+const MAX_REQUEST_BODY_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
 
-struct Component;
+#[wstd::http_server]
+async fn main(request: Request<Body>) -> Result<Response<Body>, wstd::http::Error> {
+    Ok(inner_handle(request).await)
+}
 
-impl McpHandler for Component {
-    fn handle(request: IncomingRequest, response_out: ResponseOutparam) {
-        inner_handle(request, response_out);
+async fn inner_handle(request: Request<Body>) -> Response<Body> {
+    let path = request
+        .uri()
+        .path_and_query()
+        .map(|pq| pq.as_str().to_string())
+        .unwrap_or_default();
+    match (request.method(), path.starts_with(PATH_PREFIX)) {
+        (&Method::POST, true) => handle_mcp_request(request, &path).await,
+        _ => json_response(
+            StatusCode::METHOD_NOT_ALLOWED,
+            json!({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32000,
+                    "message": format!("Method Not Allowed. Expected POST to {}{{server-id}}", PATH_PREFIX)
+                },
+                "id": null
+            })
+            .to_string(),
+        ),
     }
 }
 
-fn inner_handle(request: IncomingRequest, response_out: ResponseOutparam) {
-    match (request.method(), request.path_with_query().as_deref()) {
-        (Method::Post, Some(path)) if path.starts_with(PATH_PREFIX) => {
-            handle_mcp_request(request, response_out, path);
-        }
-        _ => {
-            send_response(
-                response_out,
-                405,
-                json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32000,
-                        "message": format!("Method Not Allowed. Expected POST to {}{{server-id}}", PATH_PREFIX)
-                    },
-                    "id": null
-                })
-                .to_string(),
-            );
-        }
-    }
-}
-
-fn handle_mcp_request(request: IncomingRequest, response_out: ResponseOutparam, path: &str) {
-    if let Err(e) = validate_content_type(&request) {
-        send_json_rpc_error(response_out, 400, -32600, &e);
-        return;
+async fn handle_mcp_request(request: Request<Body>, path: &str) -> Response<Body> {
+    if let Err(e) = validate_content_type(request.headers()) {
+        return json_rpc_error_response(StatusCode::BAD_REQUEST, -32600, &e);
     }
 
     let server_id = match extract_server_id_from_path(path) {
         Ok(id) => id,
-        Err(e) => {
-            send_json_rpc_error(response_out, 400, -32600, &e);
-            return;
-        }
+        Err(e) => return json_rpc_error_response(StatusCode::BAD_REQUEST, -32600, &e),
     };
 
     let wasmcloud_host = match config::load_wasmcloud_host() {
         Ok(h) => h,
-        Err(e) => {
-            send_json_rpc_error(response_out, 500, -32603, &e);
-            return;
-        }
+        Err(e) => return json_rpc_error_response(StatusCode::INTERNAL_SERVER_ERROR, -32603, &e),
     };
 
     let application_id = match config::load_application_id() {
         Ok(id) => id,
-        Err(e) => {
-            send_json_rpc_error(response_out, 500, -32603, &e);
-            return;
-        }
+        Err(e) => return json_rpc_error_response(StatusCode::INTERNAL_SERVER_ERROR, -32603, &e),
     };
 
-    let headers = request.headers().entries();
-
-    let body = match read_request_body(&request) {
-        Ok(b) => b,
-        Err(e) => {
-            send_json_rpc_error(response_out, 400, -32700, &e);
-            return;
+    if let Some(content_length) = request
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        if content_length > MAX_REQUEST_BODY_SIZE {
+            return json_rpc_error_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                -32600,
+                &format!(
+                    "Request body too large: {} bytes exceeds {} byte limit",
+                    content_length, MAX_REQUEST_BODY_SIZE
+                ),
+            );
         }
-    };
+    }
 
-    match crate::mcp::process_rpc(&server_id, &body, &headers, &wasmcloud_host, &application_id) {
-        Ok(result) => match serde_json::to_string(&result) {
-            Ok(body_str) => send_response(response_out, 200, body_str),
-            Err(_) => {
-                send_json_rpc_error(response_out, 500, -32603, "Internal server error");
+    let headers = header_map_to_entries(request.headers());
+
+    let mut req_body = request.into_body();
+    let body = match req_body.str_contents().await {
+        Ok(s) => {
+            if s.len() as u64 > MAX_REQUEST_BODY_SIZE {
+                return json_rpc_error_response(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    -32600,
+                    &format!(
+                        "Request body too large: {} bytes exceeds {} byte limit",
+                        s.len(),
+                        MAX_REQUEST_BODY_SIZE
+                    ),
+                );
             }
+            s.to_string()
+        }
+        Err(e) => {
+            return json_rpc_error_response(
+                StatusCode::BAD_REQUEST,
+                -32700,
+                &format!("Failed to read request body: {}", e),
+            )
+        }
+    };
+
+    match crate::mcp::process_rpc(
+        &server_id,
+        &body,
+        &headers,
+        &wasmcloud_host,
+        &application_id,
+    )
+    .await
+    {
+        Ok(result) => match serde_json::to_string(&result) {
+            Ok(body_str) => json_response(StatusCode::OK, body_str),
+            Err(_) => json_rpc_error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                -32603,
+                "Internal server error",
+            ),
         },
         Err(error_response) => match serde_json::to_string(&error_response) {
-            Ok(body_str) => send_response(response_out, 200, body_str),
-            Err(_) => {
-                send_json_rpc_error(response_out, 500, -32603, "Internal server error");
-            }
+            Ok(body_str) => json_response(StatusCode::OK, body_str),
+            Err(_) => json_rpc_error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                -32603,
+                "Internal server error",
+            ),
         },
     }
 }
 
-fn validate_content_type(request: &IncomingRequest) -> Result<(), String> {
-    validate_content_type_from_headers(&request.headers().entries())
+fn validate_content_type(headers: &HeaderMap) -> Result<(), String> {
+    validate_content_type_from_headers(&header_map_to_entries(headers))
 }
 
 fn validate_content_type_from_headers(headers: &[(String, Vec<u8>)]) -> Result<(), String> {
@@ -121,6 +151,13 @@ fn validate_content_type_from_headers(headers: &[(String, Vec<u8>)]) -> Result<(
         })
         .map(|_| ())
         .ok_or_else(|| "Content-Type must be application/json".to_string())
+}
+
+fn header_map_to_entries(headers: &HeaderMap) -> Vec<(String, Vec<u8>)> {
+    headers
+        .iter()
+        .map(|(k, v)| (k.as_str().to_string(), v.as_bytes().to_vec()))
+        .collect()
 }
 
 fn extract_server_id_from_path(path: &str) -> Result<String, String> {
@@ -138,30 +175,15 @@ fn extract_server_id_from_path(path: &str) -> Result<String, String> {
     }
 }
 
-pub(crate) fn read_request_body(request: &IncomingRequest) -> Result<String, String> {
-    let body_stream = request.consume().map_err(|_| "Failed to get body stream")?;
-    let input_stream = body_stream
-        .stream()
-        .map_err(|_| "Failed to get input stream")?;
-
-    let mut buf = Vec::new();
-    while let Ok(chunk) = input_stream.blocking_read(64 * 1024) {
-        if chunk.is_empty() {
-            break;
-        }
-        if buf.len() + chunk.len() > MAX_REQUEST_BODY_SIZE {
-            return Err(format!(
-                "Request body exceeds maximum size of {} bytes",
-                MAX_REQUEST_BODY_SIZE
-            ));
-        }
-        buf.extend_from_slice(&chunk);
-    }
-
-    String::from_utf8(buf).map_err(|e| format!("Invalid UTF-8 in body: {}", e))
+fn json_response(status: StatusCode, body: String) -> Response<Body> {
+    Response::builder()
+        .status(status)
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap_or_else(|_| Response::new(Body::from("Internal Server Error")))
 }
 
-fn send_json_rpc_error(response_out: ResponseOutparam, status: u16, code: i32, message: &str) {
+fn json_rpc_error_response(status: StatusCode, code: i32, message: &str) -> Response<Body> {
     let error_body = json!({
         "jsonrpc": "2.0",
         "error": {
@@ -169,50 +191,10 @@ fn send_json_rpc_error(response_out: ResponseOutparam, status: u16, code: i32, m
             "message": message
         },
         "id": null
-    });
-    send_response(response_out, status, error_body.to_string());
+    })
+    .to_string();
+    json_response(status, error_body)
 }
-
-fn send_response(response_out: ResponseOutparam, status: u16, body: String) {
-    let headers = Fields::new();
-    if let Err(e) = headers.set("content-type", &[b"application/json".to_vec()]) {
-        eprintln!("Failed to set content-type header: {:?}", e);
-    }
-
-    let response = OutgoingResponse::new(headers);
-    if let Err(e) = response.set_status_code(status) {
-        eprintln!("Failed to set status code: {:?}", e);
-        return;
-    }
-
-    let response_body = match response.body() {
-        Ok(rb) => rb,
-        Err(e) => {
-            eprintln!("Failed to get response body: {:?}", e);
-            return;
-        }
-    };
-    ResponseOutparam::set(response_out, Ok(response));
-
-    let output_stream = match response_body.write() {
-        Ok(os) => os,
-        Err(e) => {
-            eprintln!("Failed to get output stream: {:?}", e);
-            return;
-        }
-    };
-    if let Err(e) = output_stream.blocking_write_and_flush(body.as_bytes()) {
-        eprintln!("Failed to write response: {:?}", e);
-        return;
-    }
-
-    drop(output_stream);
-    if let Err(e) = OutgoingBody::finish(response_body, None) {
-        eprintln!("Failed to finish body: {:?}", e);
-    }
-}
-
-export!(Component);
 
 #[cfg(test)]
 mod tests {

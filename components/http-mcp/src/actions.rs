@@ -1,12 +1,11 @@
-use crate::wasi::http::outgoing_handler::handle as http_handle;
-use crate::wasi::http::types::{
-    Fields, Method, OutgoingBody, OutgoingRequest, Scheme,
-};
-use crate::wasi::io::poll::poll;
 use rust_mcp_schema::ContentBlock;
 use serde_json::{json, Value};
+use wstd::http::{Body, Client, Method, Request};
+use wstd::time::Duration;
 
-pub fn execute_mapped_action(
+const MAX_ACTION_RESPONSE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+
+pub async fn execute_mapped_action(
     action_id: &str,
     arguments: &Value,
     configurations: &str,
@@ -22,13 +21,16 @@ pub fn execute_mapped_action(
             "input": input_json,
             "configurations": serde_json::from_str::<Value>(configurations).unwrap_or(json!([]))
         },
+        // The HTTP wrapper we call does not validate or use the JWT;
+        // it is included only because the endpoint schema requires it.
+        // TODO: Should we pass through the caller's JWT instead of an empty string?
         "jwt": ""
     });
 
     let body_bytes = serde_json::to_vec(&request_body)
         .map_err(|e| format!("Failed to serialize request body: {}", e))?;
 
-    let response_body = send_http_request(wasmcloud_host, application_id, &body_bytes)?;
+    let response_body = send_http_request(wasmcloud_host, application_id, &body_bytes).await?;
 
     let data: Value = match serde_json::from_str(&response_body) {
         Ok(v) => v,
@@ -46,99 +48,62 @@ pub fn execute_mapped_action(
     Ok((false, parse_action_output(&output_value)))
 }
 
-fn parse_host_url(wasmcloud_host: &str) -> (Scheme, &str) {
-    if let Some(authority) = wasmcloud_host.strip_prefix("https://") {
-        (Scheme::Https, authority)
-    } else if let Some(authority) = wasmcloud_host.strip_prefix("http://") {
-        (Scheme::Http, authority)
-    } else {
-        (Scheme::Https, wasmcloud_host)
-    }
-}
-
-fn send_http_request(
+async fn send_http_request(
     wasmcloud_host: &str,
     application_id: &str,
     body_bytes: &[u8],
 ) -> Result<String, String> {
-    let (scheme, authority) = parse_host_url(wasmcloud_host);
+    let uri = format!("{wasmcloud_host}/");
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(&uri)
+        .header("host", application_id)
+        .header("content-type", "application/json")
+        .body(Body::from(body_bytes.to_vec()))
+        .map_err(|e| format!("Failed to build request: {}", e))?;
 
-    let headers = Fields::new();
-    headers
-        .set("content-type", &[b"application/json".to_vec()])
-        .map_err(|e| format!("Failed to set content-type header: {:?}", e))?;
-    headers
-        .set("host", &[application_id.as_bytes().to_vec()])
-        .map_err(|e| format!("Failed to set host header: {:?}", e))?;
+    let timeout = Duration::from_secs(10 * 60); // 10 minutes
+    let mut client = Client::new();
+    client.set_connect_timeout(timeout);
+    client.set_first_byte_timeout(timeout);
+    client.set_between_bytes_timeout(timeout);
 
-    let request = OutgoingRequest::new(headers);
-    request
-        .set_method(&Method::Post)
-        .map_err(|_| "Failed to set method")?;
-    request
-        .set_scheme(Some(&scheme))
-        .map_err(|_| "Failed to set scheme")?;
-    request
-        .set_authority(Some(authority))
-        .map_err(|_| "Failed to set authority")?;
-
-    let outgoing_body = request
-        .body()
-        .map_err(|_| "Failed to get outgoing body")?;
-    let output_stream = outgoing_body
-        .write()
-        .map_err(|_| "Failed to get output stream")?;
-    output_stream
-        .blocking_write_and_flush(body_bytes)
-        .map_err(|e| format!("Failed to write request body: {:?}", e))?;
-    drop(output_stream);
-    OutgoingBody::finish(outgoing_body, None)
-        .map_err(|e| format!("Failed to finish outgoing body: {:?}", e))?;
-
-    let future_response =
-        http_handle(request, None).map_err(|e| format!("HTTP request failed: {:?}", e))?;
-
-    let pollable = future_response.subscribe();
-    poll(&[&pollable]);
-
-    let response = future_response
-        .get()
-        .ok_or("Response not ready")?
-        .map_err(|_| "Failed to get response")?
-        .map_err(|e| format!("HTTP error: {:?}", e))?;
+    let response = client.send(request).await.map_err(|e| {
+        format!(
+            "HTTP request failed (possibly timed out after 10 minutes): {}",
+            e
+        )
+    })?;
 
     let status = response.status();
-    let incoming_body = response
-        .consume()
-        .map_err(|_| "Failed to consume response body")?;
-    let input_stream = incoming_body
-        .stream()
-        .map_err(|_| "Failed to get response stream")?;
+    let mut body = response.into_body();
 
-    let mut buf = Vec::new();
-    loop {
-        match input_stream.blocking_read(64 * 1024) {
-            Ok(chunk) => {
-                if chunk.is_empty() {
-                    break;
-                }
-                buf.extend_from_slice(&chunk);
-            }
-            Err(_) => break,
+    if let Some(content_length) = body.content_length() {
+        if content_length > MAX_ACTION_RESPONSE_SIZE {
+            return Err(format!(
+                "Action response too large: {} bytes exceeds {} byte limit",
+                content_length, MAX_ACTION_RESPONSE_SIZE
+            ));
         }
     }
-    drop(input_stream);
 
-    let response_text =
-        String::from_utf8(buf).map_err(|e| format!("Invalid UTF-8 in response: {}", e))?;
+    let response_text = body
+        .str_contents()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?
+        .to_string();
 
-    if status < 200 || status >= 300 {
+    if response_text.len() as u64 > MAX_ACTION_RESPONSE_SIZE {
         return Err(format!(
-            "Action HTTP request failed with status {}: {}",
-            status, response_text
+            "Action response too large: {} bytes exceeds {} byte limit",
+            response_text.len(),
+            MAX_ACTION_RESPONSE_SIZE
         ));
     }
 
+    if !status.is_success() {
+        return Err(format!("Action HTTP request failed with status {}", status));
+    }
     Ok(response_text)
 }
 

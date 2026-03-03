@@ -15,7 +15,6 @@ use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::Serialize;
 use serde_json::json;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use wash_runtime::{
@@ -169,25 +168,15 @@ async fn start_mock_action_server() -> Result<SocketAddr> {
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    tokio::spawn(async move {
-        loop {
-            if let Ok((mut stream, _)) = listener.accept().await {
-                tokio::spawn(async move {
-                    let mut buf = vec![0u8; 8192];
-                    let _ = stream.read(&mut buf).await;
+    let app = axum::Router::new().route(
+        "/",
+        axum::routing::post(|| async {
+            axum::Json(json!({"output": "mock action executed successfully"}))
+        }),
+    );
 
-                    let response_body =
-                        r#"{"output": "mock action executed successfully"}"#;
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        response_body.len(),
-                        response_body
-                    );
-                    let _ = stream.write_all(response.as_bytes()).await;
-                    let _ = stream.shutdown().await;
-                });
-            }
-        }
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
     });
 
     Ok(addr)
@@ -261,9 +250,12 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
                 WitInterface {
                     namespace: "wasi".to_string(),
                     package: "http".to_string(),
-                    interfaces: ["incoming-handler".to_string(), "outgoing-handler".to_string()]
-                        .into_iter()
-                        .collect(),
+                    interfaces: [
+                        "incoming-handler".to_string(),
+                        "outgoing-handler".to_string(),
+                    ]
+                    .into_iter()
+                    .collect(),
                     version: Some(semver::Version::parse("0.2.2").unwrap()),
                     config: HashMap::from([("host".to_string(), addr.to_string())]),
                 },
@@ -374,6 +366,8 @@ async fn test_happy_path() -> Result<()> {
     Ok(())
 }
 
+// TODO: Re-enable when JWT auth is enabled (post-Milestone 0)
+#[ignore]
 #[tokio::test]
 async fn test_auth_failures() -> Result<()> {
     let (_host, addr) = setup().await?;

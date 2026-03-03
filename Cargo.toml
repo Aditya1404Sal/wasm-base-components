@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "components/http-mcp",
-    "components/http-mcp/tests/mock-actions",
     "components/http-wrapper",
     "components/utilities/auth",
     "components/utilities/crud",

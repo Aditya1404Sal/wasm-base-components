@@ -15,6 +15,7 @@ path = "tests/integration_test_mcp.rs"
 wash-runtime = { git = "https://github.com/wasmcloud/wash", branch = "main" }
 tokio = { version = "1", features = ["rt", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+axum = "0.8"
 anyhow = "1.0"
 jsonwebtoken = "9.3"
 bytes = "1"

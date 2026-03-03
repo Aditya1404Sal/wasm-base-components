@@ -126,6 +126,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-task"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
+
+[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -179,10 +185,13 @@ checksum = "8b52af3cb4058c895d37317bb27508dccc8e5f2d39454016b297bf4a400597b8"
 dependencies = [
  "axum-core",
  "bytes",
+ "form_urlencoded",
  "futures-util",
  "http",
  "http-body",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "itoa",
  "matchit",
  "memchr",
@@ -190,10 +199,15 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "serde_core",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_urlencoded",
  "sync_wrapper",
+ "tokio",
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -212,6 +226,7 @@ dependencies = [
  "sync_wrapper",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -1200,6 +1215,15 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e51093e27b0797c359783294ca4f0a911c270184cb10f85783b118614a1501be"
+dependencies = [
+ "instant",
+]
+
+[[package]]
+name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
@@ -1355,6 +1379,21 @@ name = "futures-io"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
+
+[[package]]
+name = "futures-lite"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49a9d51ce47660b1e808d3c990b4709f2f415d928835a17dfd16991515c46bce"
+dependencies = [
+ "fastrand 1.9.0",
+ "futures-core",
+ "futures-io",
+ "memchr",
+ "parking",
+ "pin-project-lite",
+ "waker-fn",
+]
 
 [[package]]
 name = "futures-macro"
@@ -1857,6 +1896,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "instant"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "io-extras"
 version = "0.18.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2155,7 +2203,9 @@ dependencies = [
  "rust-mcp-schema",
  "serde",
  "serde_json",
+ "tokio",
  "wit-bindgen 0.51.0",
+ "wstd",
 ]
 
 [[package]]
@@ -2163,6 +2213,7 @@ name = "mcp-integration-test"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "bytes",
  "jsonwebtoken",
  "reqwest",
@@ -2224,13 +2275,6 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "mock-actions-component"
-version = "0.1.0"
-dependencies = [
- "wit-bindgen 0.47.0",
 ]
 
 [[package]]
@@ -2647,6 +2691,12 @@ name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
+
+[[package]]
+name = "parking"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
 
 [[package]]
 name = "parking_lot"
@@ -3722,6 +3772,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_path_to_error"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+dependencies = [
+ "itoa",
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_repr"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4031,7 +4092,7 @@ version = "3.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "82a72c767771b47409d2345987fda8628641887d5466101319899796367354a0"
 dependencies = [
- "fastrand",
+ "fastrand 2.3.0",
  "getrandom 0.4.1",
  "once_cell",
  "rustix 1.1.4",
@@ -4712,6 +4773,12 @@ name = "vsimd"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
+
+[[package]]
+name = "waker-fn"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "317211a0dc0ceedd78fb2ca9a44aed3d7b9b26f81870d485c07122b4350673b7"
 
 [[package]]
 name = "want"
@@ -6963,6 +7030,38 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
+
+[[package]]
+name = "wstd"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f743611ee524c2416bc1513157eb3235ca24f4270d1b3ab19f93676fcff21398"
+dependencies = [
+ "anyhow",
+ "async-task",
+ "bytes",
+ "futures-lite",
+ "http",
+ "http-body",
+ "http-body-util",
+ "itoa",
+ "pin-project-lite",
+ "serde",
+ "serde_json",
+ "slab",
+ "wasip2",
+ "wstd-macro",
+]
+
+[[package]]
+name = "wstd-macro"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5db5d13d6e3f2b180b04be8ff8d5c35b37d5621d3e2d0aa85ab99adf817a780"
+dependencies = [
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "x509-cert"

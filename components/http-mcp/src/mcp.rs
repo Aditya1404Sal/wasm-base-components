@@ -1,7 +1,7 @@
 use crate::actions;
 // use crate::betty_blocks::auth::jwt::{allowed_to_call, allowed_to_list, AuthError};
 use crate::config;
-use crate::types::*;
+use crate::types::McpServerConfig;
 use rust_mcp_schema::{
     CallToolRequestParams, CallToolResult, ContentBlock, JsonrpcErrorResponse, JsonrpcRequest,
     JsonrpcResponse, JsonrpcResultResponse, ListToolsResult, RequestId, RpcError,
@@ -10,7 +10,7 @@ use serde_json::Value;
 
 type Headers = Vec<(String, Vec<u8>)>;
 
-pub fn process_rpc(
+pub async fn process_rpc(
     server_id: &str,
     body: &str,
     headers: &Headers,
@@ -52,7 +52,14 @@ pub fn process_rpc(
         "initialize" => handle_initialize(headers, &server_config),
         "tools/list" => handle_list_tools(headers, &server_config),
         "tools/call" => {
-            handle_call_tool(&server_config, headers, params, wasmcloud_host, application_id)
+            handle_call_tool(
+                &server_config,
+                headers,
+                params,
+                wasmcloud_host,
+                application_id,
+            )
+            .await
         }
         _ => {
             return Err(create_error_response(
@@ -104,7 +111,7 @@ fn handle_list_tools(_headers: &Headers, server_config: &McpServerConfig) -> Res
     serde_json::to_value(result).map_err(|e| format!("Failed to serialize tools list: {}", e))
 }
 
-fn handle_call_tool(
+async fn handle_call_tool(
     server_config: &McpServerConfig,
     _headers: &Headers,
     params: Option<Value>,
@@ -150,7 +157,8 @@ fn handle_call_tool(
         &configurations,
         wasmcloud_host,
         application_id,
-    )?;
+    )
+    .await?;
 
     let result = CallToolResult {
         content,
@@ -325,20 +333,20 @@ mod tests {
         assert!(call_params.is_err(), "invalid params should fail to parse");
     }
 
-    #[test]
-    fn test_handle_call_tool_missing_params() {
+    #[tokio::test]
+    async fn test_handle_call_tool_missing_params() {
         let config = make_test_server_config();
         let headers: Headers = vec![];
-        let result = handle_call_tool(&config, &headers, None, "host", "app-id");
+        let result = handle_call_tool(&config, &headers, None, "host", "app-id").await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Missing params for tools/call");
     }
 
-    #[test]
-    fn test_handle_call_tool_empty_object_params() {
+    #[tokio::test]
+    async fn test_handle_call_tool_empty_object_params() {
         let config = make_test_server_config();
         let headers: Headers = vec![];
-        let result = handle_call_tool(&config, &headers, Some(json!({})), "host", "app-id");
+        let result = handle_call_tool(&config, &headers, Some(json!({})), "host", "app-id").await;
         assert!(result.is_err());
         assert!(
             result.unwrap_err().contains("Invalid tool call parameters"),
