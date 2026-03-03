@@ -1,55 +1,145 @@
-use crate::betty_blocks::actions::actions::{call, Error as ActionError, RunInput, RunPayload};
+use crate::wasi::http::outgoing_handler::handle as http_handle;
+use crate::wasi::http::types::{
+    Fields, Method, OutgoingBody, OutgoingRequest, Scheme,
+};
+use crate::wasi::io::poll::poll;
 use rust_mcp_schema::ContentBlock;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 pub fn execute_mapped_action(
     action_id: &str,
     arguments: &Value,
     configurations: &str,
+    wasmcloud_host: &str,
+    application_id: &str,
 ) -> Result<(bool, Vec<ContentBlock>), String> {
     let input_json = serde_json::to_string(arguments)
         .map_err(|e| format!("Failed to serialize arguments: {}", e))?;
 
-    let run_input = RunInput {
-        action_id: action_id.to_string(),
-        payload: RunPayload {
-            input: input_json,
-            configurations: configurations.to_string(),
+    let request_body = json!({
+        "action_id": action_id,
+        "payload": {
+            "input": input_json,
+            "configurations": serde_json::from_str::<Value>(configurations).unwrap_or(json!([]))
         },
-    };
+        "jwt": ""
+    });
 
-    match call(&run_input) {
-        Ok(output) => {
-            // Response body is {"output": <any JSON value>}. If "output" key is missing -> null.
-            let data: Value = match serde_json::from_str(&output.result) {
-                Ok(v) => v,
-                Err(_) => {
-                    return Ok((
-                        true,
-                        vec![ContentBlock::text_content(format!(
-                            "Failed to parse action response: {}",
-                            output.result
-                        ))],
-                    ))
-                }
-            };
-            let output_value = data.get("output").cloned().unwrap_or(Value::Null);
-            Ok((false, parse_action_output(&output_value)))
+    let body_bytes = serde_json::to_vec(&request_body)
+        .map_err(|e| format!("Failed to serialize request body: {}", e))?;
+
+    let response_body = send_http_request(wasmcloud_host, application_id, &body_bytes)?;
+
+    let data: Value = match serde_json::from_str(&response_body) {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok((
+                true,
+                vec![ContentBlock::text_content(format!(
+                    "Failed to parse action response: {}",
+                    response_body
+                ))],
+            ))
         }
-        Err(ActionError::RunFailed(msg)) => Ok((
-            true,
-            vec![ContentBlock::text_content(format!(
-                "Action failed: {}",
-                msg
-            ))],
-        )),
-        Err(ActionError::Forbidden) => Ok((
-            true,
-            vec![ContentBlock::text_content(
-                "Action forbidden: insufficient permissions".to_string(),
-            )],
-        )),
+    };
+    let output_value = data.get("output").cloned().unwrap_or(Value::Null);
+    Ok((false, parse_action_output(&output_value)))
+}
+
+fn parse_host_url(wasmcloud_host: &str) -> (Scheme, &str) {
+    if let Some(authority) = wasmcloud_host.strip_prefix("https://") {
+        (Scheme::Https, authority)
+    } else if let Some(authority) = wasmcloud_host.strip_prefix("http://") {
+        (Scheme::Http, authority)
+    } else {
+        (Scheme::Https, wasmcloud_host)
     }
+}
+
+fn send_http_request(
+    wasmcloud_host: &str,
+    application_id: &str,
+    body_bytes: &[u8],
+) -> Result<String, String> {
+    let (scheme, authority) = parse_host_url(wasmcloud_host);
+
+    let headers = Fields::new();
+    headers
+        .set("content-type", &[b"application/json".to_vec()])
+        .map_err(|e| format!("Failed to set content-type header: {:?}", e))?;
+    headers
+        .set("host", &[application_id.as_bytes().to_vec()])
+        .map_err(|e| format!("Failed to set host header: {:?}", e))?;
+
+    let request = OutgoingRequest::new(headers);
+    request
+        .set_method(&Method::Post)
+        .map_err(|_| "Failed to set method")?;
+    request
+        .set_scheme(Some(&scheme))
+        .map_err(|_| "Failed to set scheme")?;
+    request
+        .set_authority(Some(authority))
+        .map_err(|_| "Failed to set authority")?;
+
+    let outgoing_body = request
+        .body()
+        .map_err(|_| "Failed to get outgoing body")?;
+    let output_stream = outgoing_body
+        .write()
+        .map_err(|_| "Failed to get output stream")?;
+    output_stream
+        .blocking_write_and_flush(body_bytes)
+        .map_err(|e| format!("Failed to write request body: {:?}", e))?;
+    drop(output_stream);
+    OutgoingBody::finish(outgoing_body, None)
+        .map_err(|e| format!("Failed to finish outgoing body: {:?}", e))?;
+
+    let future_response =
+        http_handle(request, None).map_err(|e| format!("HTTP request failed: {:?}", e))?;
+
+    let pollable = future_response.subscribe();
+    poll(&[&pollable]);
+
+    let response = future_response
+        .get()
+        .ok_or("Response not ready")?
+        .map_err(|_| "Failed to get response")?
+        .map_err(|e| format!("HTTP error: {:?}", e))?;
+
+    let status = response.status();
+    let incoming_body = response
+        .consume()
+        .map_err(|_| "Failed to consume response body")?;
+    let input_stream = incoming_body
+        .stream()
+        .map_err(|_| "Failed to get response stream")?;
+
+    let mut buf = Vec::new();
+    loop {
+        match input_stream.blocking_read(64 * 1024) {
+            Ok(chunk) => {
+                if chunk.is_empty() {
+                    break;
+                }
+                buf.extend_from_slice(&chunk);
+            }
+            Err(_) => break,
+        }
+    }
+    drop(input_stream);
+
+    let response_text =
+        String::from_utf8(buf).map_err(|e| format!("Invalid UTF-8 in response: {}", e))?;
+
+    if status < 200 || status >= 300 {
+        return Err(format!(
+            "Action HTTP request failed with status {}: {}",
+            status, response_text
+        ));
+    }
+
+    Ok(response_text)
 }
 
 pub fn parse_action_output(output: &Value) -> Vec<ContentBlock> {
@@ -92,7 +182,6 @@ mod tests {
         assert_eq!(content.len(), 1);
         match &content[0] {
             ContentBlock::TextContent(t) => {
-                // Should be pretty-printed JSON
                 assert!(t.text.contains("key"));
                 assert!(t.text.contains("value"));
             }

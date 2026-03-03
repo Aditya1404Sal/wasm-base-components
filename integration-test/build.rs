@@ -22,11 +22,6 @@ fn main() {
             fixtures_dir.join("betty_mcp_component.wasm"),
         ),
         (
-            "mock-actions",
-            repo_root.join("components/http-mcp/tests/mock-actions"),
-            fixtures_dir.join("mock_actions.wasm"),
-        ),
-        (
             "auth",
             repo_root.join("components/utilities/auth"),
             fixtures_dir.join("jwt_auth_component.wasm"),
@@ -80,8 +75,6 @@ fn main() {
 
     println!("cargo:rerun-if-changed=../components/http-mcp/src/");
     println!("cargo:rerun-if-changed=../components/http-mcp/wasmcloud.toml");
-    println!("cargo:rerun-if-changed=../components/http-mcp/tests/mock-actions/src/");
-    println!("cargo:rerun-if-changed=../components/http-mcp/tests/mock-actions/wasmcloud.toml");
     println!("cargo:rerun-if-changed=../components/utilities/auth/src/");
     println!("cargo:rerun-if-changed=../components/utilities/auth/wasmcloud.toml");
     println!("cargo:rerun-if-env-changed=SKIP_WASH_BUILD");

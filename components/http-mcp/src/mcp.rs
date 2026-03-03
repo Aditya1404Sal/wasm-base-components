@@ -14,6 +14,8 @@ pub fn process_rpc(
     server_id: &str,
     body: &str,
     headers: &Headers,
+    wasmcloud_host: &str,
+    application_id: &str,
 ) -> Result<JsonrpcResponse, JsonrpcErrorResponse> {
     let request_obj: JsonrpcRequest = match serde_json::from_str(body) {
         Ok(r) => r,
@@ -49,7 +51,9 @@ pub fn process_rpc(
     let result = match request_obj.method.as_str() {
         "initialize" => handle_initialize(headers, &server_config),
         "tools/list" => handle_list_tools(headers, &server_config),
-        "tools/call" => handle_call_tool(&server_config, headers, params),
+        "tools/call" => {
+            handle_call_tool(&server_config, headers, params, wasmcloud_host, application_id)
+        }
         _ => {
             return Err(create_error_response(
                 -32601,
@@ -104,6 +108,8 @@ fn handle_call_tool(
     server_config: &McpServerConfig,
     _headers: &Headers,
     params: Option<Value>,
+    wasmcloud_host: &str,
+    application_id: &str,
 ) -> Result<Value, String> {
     let params = params.ok_or("Missing params for tools/call")?;
     let call_params: CallToolRequestParams = serde_json::from_value(params)
@@ -130,7 +136,7 @@ fn handle_call_tool(
     // }
 
     // TODO(Configurations fetching TBD)
-    let configurations = "{}".to_string();
+    let configurations = "[]".to_string();
 
     let args_value = call_params
         .arguments
@@ -138,8 +144,13 @@ fn handle_call_tool(
         .map(|m| Value::Object(m.clone()))
         .unwrap_or(Value::Null);
 
-    let (is_error, content): (bool, Vec<ContentBlock>) =
-        actions::execute_mapped_action(&tool_with_action.action_id, &args_value, &configurations)?;
+    let (is_error, content): (bool, Vec<ContentBlock>) = actions::execute_mapped_action(
+        &tool_with_action.action_id,
+        &args_value,
+        &configurations,
+        wasmcloud_host,
+        application_id,
+    )?;
 
     let result = CallToolResult {
         content,
@@ -318,7 +329,7 @@ mod tests {
     fn test_handle_call_tool_missing_params() {
         let config = make_test_server_config();
         let headers: Headers = vec![];
-        let result = handle_call_tool(&config, &headers, None);
+        let result = handle_call_tool(&config, &headers, None, "host", "app-id");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Missing params for tools/call");
     }
@@ -327,7 +338,7 @@ mod tests {
     fn test_handle_call_tool_empty_object_params() {
         let config = make_test_server_config();
         let headers: Headers = vec![];
-        let result = handle_call_tool(&config, &headers, Some(json!({})));
+        let result = handle_call_tool(&config, &headers, Some(json!({})), "host", "app-id");
         assert!(result.is_err());
         assert!(
             result.unwrap_err().contains("Invalid tool call parameters"),

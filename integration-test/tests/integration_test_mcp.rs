@@ -4,7 +4,7 @@
 //! 1. JWT token validation via jwt-auth-component (HS256)
 //! 2. Config store loading for MCP server and auth configuration
 //! 3. JSON-RPC request handling (initialize, tools/list, tools/call)
-//! 4. Action execution via mock-actions component
+//! 4. Action execution via HTTP request to a mock action server
 //!
 //! Fixtures are automatically built by build.rs before tests run.
 
@@ -15,6 +15,7 @@ use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::Serialize;
 use serde_json::json;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use wash_runtime::{
@@ -42,10 +43,6 @@ const BETTY_MCP_COMPONENT_WASM: &[u8] = include_bytes!(concat!(
 const JWT_AUTH_COMPONENT_WASM: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/jwt_auth_component.wasm"
-));
-const MOCK_ACTIONS_WASM: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/mock_actions.wasm"
 ));
 
 // ============ Test Constants ============
@@ -165,11 +162,44 @@ fn mcp_component_config() -> HashMap<String, String> {
     ])
 }
 
+// ============ Mock Action HTTP Server ============
+
+async fn start_mock_action_server() -> Result<SocketAddr> {
+    let port = find_available_port().await?;
+    let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    tokio::spawn(async move {
+        loop {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let _ = stream.read(&mut buf).await;
+
+                    let response_body =
+                        r#"{"output": "mock action executed successfully"}"#;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        response_body.len(),
+                        response_body
+                    );
+                    let _ = stream.write_all(response.as_bytes()).await;
+                    let _ = stream.shutdown().await;
+                });
+            }
+        }
+    });
+
+    Ok(addr)
+}
+
 // ============ Host and Workload Setup ============
 
 async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
     let port = find_available_port().await?;
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+
+    let mock_action_addr = start_mock_action_server().await?;
 
     let engine = Engine::builder().build()?;
     let http_plugin = HttpServer::new(DevRouter::default(), addr).await?;
@@ -198,9 +228,15 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
                         memory_limit_mb: 256,
                         cpu_limit: 1,
                         config: mcp_component_config(),
-                        environment: HashMap::new(),
+                        environment: HashMap::from([
+                            (
+                                "WASMCLOUD_HOST".to_string(),
+                                format!("http://{mock_action_addr}"),
+                            ),
+                            ("APPLICATION_ID".to_string(), "test-app-id".to_string()),
+                        ]),
                         volume_mounts: vec![],
-                        allowed_hosts: vec![],
+                        allowed_hosts: vec![mock_action_addr.to_string()],
                     },
                     pool_size: 1,
                     max_invocations: 100,
@@ -220,27 +256,14 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
                     pool_size: 1,
                     max_invocations: 100,
                 },
-                Component {
-                    name: "mock-actions".to_string(),
-                    bytes: bytes::Bytes::from_static(MOCK_ACTIONS_WASM),
-                    digest: None,
-                    local_resources: LocalResources {
-                        memory_limit_mb: 128,
-                        cpu_limit: 1,
-                        config: HashMap::new(),
-                        environment: HashMap::new(),
-                        volume_mounts: vec![],
-                        allowed_hosts: vec![],
-                    },
-                    pool_size: 1,
-                    max_invocations: 100,
-                },
             ],
             host_interfaces: vec![
                 WitInterface {
                     namespace: "wasi".to_string(),
                     package: "http".to_string(),
-                    interfaces: ["incoming-handler".to_string()].into_iter().collect(),
+                    interfaces: ["incoming-handler".to_string(), "outgoing-handler".to_string()]
+                        .into_iter()
+                        .collect(),
                     version: Some(semver::Version::parse("0.2.2").unwrap()),
                     config: HashMap::from([("host".to_string(), addr.to_string())]),
                 },
@@ -254,6 +277,13 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
                         config.extend(auth_component_config());
                         config
                     },
+                },
+                WitInterface {
+                    namespace: "wasi".to_string(),
+                    package: "cli".to_string(),
+                    interfaces: ["environment".to_string()].into_iter().collect(),
+                    version: Some(semver::Version::parse("0.2.2").unwrap()),
+                    config: HashMap::new(),
                 },
             ],
             volumes: vec![],

@@ -64,6 +64,22 @@ fn handle_mcp_request(request: IncomingRequest, response_out: ResponseOutparam, 
         }
     };
 
+    let wasmcloud_host = match config::load_wasmcloud_host() {
+        Ok(h) => h,
+        Err(e) => {
+            send_json_rpc_error(response_out, 500, -32603, &e);
+            return;
+        }
+    };
+
+    let application_id = match config::load_application_id() {
+        Ok(id) => id,
+        Err(e) => {
+            send_json_rpc_error(response_out, 500, -32603, &e);
+            return;
+        }
+    };
+
     let headers = request.headers().entries();
 
     let body = match read_request_body(&request) {
@@ -74,7 +90,7 @@ fn handle_mcp_request(request: IncomingRequest, response_out: ResponseOutparam, 
         }
     };
 
-    match crate::mcp::process_rpc(&server_id, &body, &headers) {
+    match crate::mcp::process_rpc(&server_id, &body, &headers, &wasmcloud_host, &application_id) {
         Ok(result) => match serde_json::to_string(&result) {
             Ok(body_str) => send_response(response_out, 200, body_str),
             Err(_) => {

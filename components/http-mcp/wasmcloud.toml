@@ -9,6 +9,5 @@ wasm_target = "wasm32-wasip2"
 
 [overrides]
 "betty-blocks:auth" = { path = "../../wit/auth.wit" }
-"betty-blocks:actions" = { path = "../../wit/actions.wit"}
 "betty-blocks:types" = { path = "../../wit/types.wit"}
 

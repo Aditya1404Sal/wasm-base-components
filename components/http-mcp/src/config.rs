@@ -1,4 +1,5 @@
 use crate::types::{McpServerConfig, McpServersConfig};
+use crate::wasi::cli::environment::get_environment;
 use crate::wasi::config::store::get;
 use rust_mcp_schema::{
     Implementation, InitializeResult, ServerCapabilities, ServerCapabilitiesTools,
@@ -6,6 +7,25 @@ use rust_mcp_schema::{
 };
 
 const WASI_CONFIG_KEY: &str = "mcp_servers";
+const WASMCLOUD_HOST_ENV: &str = "WASMCLOUD_HOST";
+const APPLICATION_ID_ENV: &str = "APPLICATION_ID";
+
+pub fn load_env_var(name: &str) -> Result<String, String> {
+    let env_vars = get_environment();
+    env_vars
+        .into_iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value)
+        .ok_or_else(|| format!("Environment variable '{}' not set", name))
+}
+
+pub fn load_wasmcloud_host() -> Result<String, String> {
+    load_env_var(WASMCLOUD_HOST_ENV)
+}
+
+pub fn load_application_id() -> Result<String, String> {
+    load_env_var(APPLICATION_ID_ENV)
+}
 
 pub fn load_server_config(server_id: &str) -> Result<McpServerConfig, String> {
     let raw = get(WASI_CONFIG_KEY)
