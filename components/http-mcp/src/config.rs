@@ -1,9 +1,11 @@
 use crate::types::{McpServerConfig, McpServersConfig};
 use crate::wasi::config::store::get;
-use rust_mcp_schema::InitializeResult;
+use rust_mcp_schema::{
+    Implementation, InitializeResult, ServerCapabilities, ServerCapabilitiesTools,
+    LATEST_PROTOCOL_VERSION,
+};
 
 const WASI_CONFIG_KEY: &str = "mcp_servers";
-const MCP_INITIALIZE_KEY: &str = "meta_info";
 
 pub fn load_server_config(server_id: &str) -> Result<McpServerConfig, String> {
     let raw = get(WASI_CONFIG_KEY)
@@ -13,12 +15,24 @@ pub fn load_server_config(server_id: &str) -> Result<McpServerConfig, String> {
     parse_server_config(&raw, server_id)
 }
 
-pub fn load_initialize_result() -> Result<InitializeResult, String> {
-    let raw = get(MCP_INITIALIZE_KEY)
-        .map_err(|e| format!("Failed to get wasi config: {:?}", e))?
-        .ok_or_else(|| "meta_info key not found in runtime configuration".to_string())?;
-
-    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse meta_info config: {}", e))
+pub fn build_initialize_result(server_config: &McpServerConfig) -> InitializeResult {
+    InitializeResult {
+        protocol_version: LATEST_PROTOCOL_VERSION.to_string(),
+        capabilities: ServerCapabilities {
+            tools: (!server_config.tools.is_empty()).then_some(ServerCapabilitiesTools::default()),
+            ..Default::default()
+        },
+        server_info: Implementation {
+            name: server_config.id.clone(),
+            version: "0.1.0".to_string(),
+            description: None,
+            icons: vec![],
+            title: None,
+            website_url: None,
+        },
+        instructions: None,
+        meta: None,
+    }
 }
 
 fn parse_server_config(raw: &str, server_id: &str) -> Result<McpServerConfig, String> {
@@ -119,5 +133,29 @@ mod tests {
         let result = parse_server_config(r#"{"mcp-servers": []}"#, "any-id");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found in configuration"));
+    }
+
+    #[test]
+    fn test_build_initialize_result_with_tools() {
+        let config = parse_server_config(TEST_MCP_CONFIG, "weather-server-001").unwrap();
+        let result = build_initialize_result(&config);
+
+        assert_eq!(result.protocol_version, LATEST_PROTOCOL_VERSION);
+        assert_eq!(result.server_info.name, "weather-server-001");
+        assert_eq!(result.server_info.version, "0.1.0");
+        assert!(result.capabilities.tools.is_some());
+        assert!(result.instructions.is_none());
+    }
+
+    #[test]
+    fn test_build_initialize_result_without_tools() {
+        let config = McpServerConfig {
+            id: "empty-server".to_string(),
+            tools: vec![],
+        };
+        let result = build_initialize_result(&config);
+
+        assert_eq!(result.server_info.name, "empty-server");
+        assert!(result.capabilities.tools.is_none());
     }
 }
