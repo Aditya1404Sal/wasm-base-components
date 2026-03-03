@@ -1,3 +1,17 @@
+# [1.5.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.4.0...v1.5.0) (2026-03-03)
+
+
+### Bug Fixes
+
+* changed the auth wit, addressed review ([56a85c0](https://github.com/bettyblocks/wasm-base-components/commit/56a85c010008c30df6c81120efef5eeeafaa7715))
+* update mcp & auth components based on new specs ([28d880c](https://github.com/bettyblocks/wasm-base-components/commit/28d880ceac0f25cd408541d911e7612381c11e23))
+* use jsonschema in validation ([ab0df74](https://github.com/bettyblocks/wasm-base-components/commit/ab0df74b6a85751caee60a0c0e685e3038f207c5))
+
+
+### Features
+
+* add mcp and auth component with auth wit ([6c32199](https://github.com/bettyblocks/wasm-base-components/commit/6c321991a54894e6af39ced016bd421ac8f2da7b))
+
 # [1.4.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.3.3...v1.4.0) (2026-02-25)
 
 
