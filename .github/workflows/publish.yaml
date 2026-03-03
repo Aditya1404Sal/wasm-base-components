@@ -38,6 +38,7 @@ jobs:
         data-api-component|components/utilities/data-api/build/data_api_component.wasm
         http-wrapper|components/http-wrapper/build/http_wrapper.wasm
         log-to-stdout|target/wasm32-wasip2/release/log_to_stdout.wasm
+        http-mcp|components/http-mcp/build/mcp_component.wasm
         logs-writer|components/logs-writer/build/logs_writer.wasm
 
     steps:
