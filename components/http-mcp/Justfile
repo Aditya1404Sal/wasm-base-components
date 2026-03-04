@@ -6,7 +6,7 @@ test:
     cargo test --lib --bins
 
 integration-test:
-    cd ../../integration-test && cargo test -- --nocapture
+    cargo test --test integration_test_mcp -- --nocapture
 
 lint:
     cargo check

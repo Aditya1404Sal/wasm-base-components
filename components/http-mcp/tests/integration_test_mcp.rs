@@ -28,12 +28,8 @@ use wash_runtime::{
     wit::WitInterface,
 };
 
-#[path = "common/mod.rs"]
 mod common;
 use common::find_available_port;
-
-// ============ WASM Fixtures ============
-// Automatically built by build.rs via `wash build`
 
 const BETTY_MCP_COMPONENT_WASM: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -44,15 +40,11 @@ const JWT_AUTH_COMPONENT_WASM: &[u8] = include_bytes!(concat!(
     "/tests/fixtures/jwt_auth_component.wasm"
 ));
 
-// ============ Test Constants ============
-
 const TEST_SECRET: &str = "test-hs256-secret-key-for-integration-tests";
 const TEST_PROFILE_ID: &str = "test-profile-001";
 const TEST_ACTION_ID: &str = "action-weather-get";
 const TEST_SERVER_ID: &str = "weather-server-001";
 const WRONG_SECRET: &str = "wrong-secret-that-will-fail-hs256-validation";
-
-// ============ JWT Token Generation ============
 
 #[derive(Serialize)]
 struct JwtClaims {
@@ -84,8 +76,6 @@ fn make_token(secret: &str, profile_id: &str, exp_offset_secs: i64) -> String {
 fn valid_token() -> String {
     make_token(TEST_SECRET, TEST_PROFILE_ID, 3600)
 }
-
-// ============ Config Builders ============
 
 fn auth_component_config() -> HashMap<String, String> {
     HashMap::from([
@@ -161,8 +151,6 @@ fn mcp_component_config() -> HashMap<String, String> {
     ])
 }
 
-// ============ Mock Action HTTP Server ============
-
 async fn start_mock_action_server() -> Result<SocketAddr> {
     let port = find_available_port().await?;
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
@@ -181,8 +169,6 @@ async fn start_mock_action_server() -> Result<SocketAddr> {
 
     Ok(addr)
 }
-
-// ============ Host and Workload Setup ============
 
 async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
     let port = find_available_port().await?;
@@ -289,8 +275,6 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
     Ok((host, addr))
 }
 
-// ============ Request Helpers ============
-
 fn client() -> reqwest::Client {
     reqwest::Client::new()
 }
@@ -314,8 +298,6 @@ async fn rpc(
         .await
         .context("failed to parse response as JSON")
 }
-
-// ============ Tests ============
 
 #[tokio::test]
 async fn test_happy_path() -> Result<()> {
