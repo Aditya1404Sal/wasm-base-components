@@ -81,14 +81,7 @@ async fn send_http_request(
     let status = response.status();
     let mut body = response.into_body();
 
-    if let Some(content_length) = body.content_length() {
-        if content_length > MAX_ACTION_RESPONSE_SIZE {
-            return Err(format!(
-                "Action response too large: {} bytes exceeds {} byte limit",
-                content_length, MAX_ACTION_RESPONSE_SIZE
-            ));
-        }
-    }
+    reject_oversized_response_hint(&body, MAX_ACTION_RESPONSE_SIZE)?;
 
     let response_text = body
         .str_contents()
@@ -96,18 +89,37 @@ async fn send_http_request(
         .map_err(|e| format!("Failed to read response body: {}", e))?
         .to_string();
 
-    if response_text.len() as u64 > MAX_ACTION_RESPONSE_SIZE {
-        return Err(format!(
-            "Action response too large: {} bytes exceeds {} byte limit",
-            response_text.len(),
-            MAX_ACTION_RESPONSE_SIZE
-        ));
-    }
+    reject_oversized_response(&response_text, MAX_ACTION_RESPONSE_SIZE)?;
 
     if !status.is_success() {
         return Err(format!("Action HTTP request failed with status {}", status));
     }
     Ok(response_text)
+}
+
+/// Best-effort early rejection based on response content-length (may be absent).
+fn reject_oversized_response_hint(body: &Body, max_size: u64) -> Result<(), String> {
+    if let Some(content_length) = body.content_length() {
+        if content_length > max_size {
+            return Err(format!(
+                "Action response too large: {} bytes exceeds {} byte limit",
+                content_length, max_size
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Guaranteed size enforcement after reading the response body.
+fn reject_oversized_response(body: &str, max_size: u64) -> Result<(), String> {
+    if body.len() as u64 > max_size {
+        return Err(format!(
+            "Action response too large: {} bytes exceeds {} byte limit",
+            body.len(),
+            max_size
+        ));
+    }
+    Ok(())
 }
 
 pub fn parse_action_output(output: &Value) -> Vec<ContentBlock> {

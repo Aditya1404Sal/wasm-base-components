@@ -63,22 +63,8 @@ async fn handle_mcp_request(request: Request<Body>, path: &str) -> Response<Body
         Err(e) => return json_rpc_error_response(StatusCode::INTERNAL_SERVER_ERROR, -32603, &e),
     };
 
-    if let Some(content_length) = request
-        .headers()
-        .get("content-length")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-    {
-        if content_length > MAX_REQUEST_BODY_SIZE {
-            return json_rpc_error_response(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                -32600,
-                &format!(
-                    "Request body too large: {} bytes exceeds {} byte limit",
-                    content_length, MAX_REQUEST_BODY_SIZE
-                ),
-            );
-        }
+    if let Err(e) = reject_oversized_request_hint(request.headers(), MAX_REQUEST_BODY_SIZE) {
+        return json_rpc_error_response(StatusCode::PAYLOAD_TOO_LARGE, -32600, &e);
     }
 
     let headers = header_map_to_entries(request.headers());
@@ -86,16 +72,8 @@ async fn handle_mcp_request(request: Request<Body>, path: &str) -> Response<Body
     let mut req_body = request.into_body();
     let body = match req_body.str_contents().await {
         Ok(s) => {
-            if s.len() as u64 > MAX_REQUEST_BODY_SIZE {
-                return json_rpc_error_response(
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    -32600,
-                    &format!(
-                        "Request body too large: {} bytes exceeds {} byte limit",
-                        s.len(),
-                        MAX_REQUEST_BODY_SIZE
-                    ),
-                );
+            if let Err(e) = reject_oversized_body(&s, MAX_REQUEST_BODY_SIZE) {
+                return json_rpc_error_response(StatusCode::PAYLOAD_TOO_LARGE, -32600, &e);
             }
             s.to_string()
         }
@@ -173,6 +151,35 @@ fn extract_server_id_from_path(path: &str) -> Result<String, String> {
     } else {
         Ok(server_id.to_string())
     }
+}
+
+/// Best-effort early rejection based on content-length header (may be absent or inaccurate).
+fn reject_oversized_request_hint(headers: &HeaderMap, max_size: u64) -> Result<(), String> {
+    if let Some(content_length) = headers
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        if content_length > max_size {
+            return Err(format!(
+                "Request body too large: {} bytes exceeds {} byte limit",
+                content_length, max_size
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Guaranteed size enforcement after reading the body.
+fn reject_oversized_body(body: &str, max_size: u64) -> Result<(), String> {
+    if body.len() as u64 > max_size {
+        return Err(format!(
+            "Request body too large: {} bytes exceeds {} byte limit",
+            body.len(),
+            max_size
+        ));
+    }
+    Ok(())
 }
 
 fn json_response(status: StatusCode, body: String) -> Response<Body> {
