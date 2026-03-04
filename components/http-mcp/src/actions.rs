@@ -19,7 +19,7 @@ pub async fn execute_mapped_action(
         "action_id": action_id,
         "payload": {
             "input": input_json,
-            "configurations": serde_json::from_str::<Value>(configurations).unwrap_or(json!([]))
+            "configurations": configurations
         },
         // The HTTP wrapper we call does not validate or use the JWT;
         // it is included only because the endpoint schema requires it.
@@ -57,7 +57,10 @@ async fn send_http_request(
     let request = Request::builder()
         .method(Method::POST)
         .uri(&uri)
-        .header("host", application_id)
+        // NOTE: WASI prohibits to set the host header so as a workaround
+        // we set this header. The runtime-gateway then sets the host header
+        // with this value
+        .header("x-route-host", application_id)
         .header("content-type", "application/json")
         .body(Body::from(body_bytes.to_vec()))
         .map_err(|e| format!("Failed to build request: {}", e))?;
