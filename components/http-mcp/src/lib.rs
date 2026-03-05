@@ -24,7 +24,7 @@ async fn inner_handle(request: Request<Body>) -> Response<Body> {
     let path = request
         .uri()
         .path_and_query()
-        .map(|pq| pq.as_str().to_string())
+        .map(|pq| pq.to_string())
         .unwrap_or_default();
     match (request.method(), path.starts_with(PATH_PREFIX)) {
         (&Method::POST, true) => handle_mcp_request(request, &path).await,
@@ -53,13 +53,8 @@ async fn handle_mcp_request(request: Request<Body>, path: &str) -> Response<Body
         Err(e) => return json_rpc_error_response(StatusCode::BAD_REQUEST, -32600, &e),
     };
 
-    let wasmcloud_host = match config::load_wasmcloud_host() {
-        Ok(h) => h,
-        Err(e) => return json_rpc_error_response(StatusCode::INTERNAL_SERVER_ERROR, -32603, &e),
-    };
-
-    let application_id = match config::load_application_id() {
-        Ok(id) => id,
+    let env_config = match config::EnvConfig::from_env() {
+        Ok(c) => c,
         Err(e) => return json_rpc_error_response(StatusCode::INTERNAL_SERVER_ERROR, -32603, &e),
     };
 
@@ -72,7 +67,7 @@ async fn handle_mcp_request(request: Request<Body>, path: &str) -> Response<Body
     let mut req_body = request.into_body();
     let body = match req_body.str_contents().await {
         Ok(s) => {
-            if let Err(e) = reject_oversized_body(&s, MAX_REQUEST_BODY_SIZE) {
+            if let Err(e) = reject_oversized_body("Request body", s, MAX_REQUEST_BODY_SIZE) {
                 return json_rpc_error_response(StatusCode::PAYLOAD_TOO_LARGE, -32600, &e);
             }
             s.to_string()
@@ -81,7 +76,7 @@ async fn handle_mcp_request(request: Request<Body>, path: &str) -> Response<Body
             return json_rpc_error_response(
                 StatusCode::BAD_REQUEST,
                 -32700,
-                &format!("Failed to read request body: {}", e),
+                &format!("Failed to read request body: {e}"),
             )
         }
     };
@@ -90,27 +85,13 @@ async fn handle_mcp_request(request: Request<Body>, path: &str) -> Response<Body
         &server_id,
         &body,
         &headers,
-        &wasmcloud_host,
-        &application_id,
+        &env_config.wasmcloud_host,
+        &env_config.application_id,
     )
     .await
     {
-        Ok(result) => match serde_json::to_string(&result) {
-            Ok(body_str) => json_response(StatusCode::OK, body_str),
-            Err(_) => json_rpc_error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                -32603,
-                "Internal server error",
-            ),
-        },
-        Err(error_response) => match serde_json::to_string(&error_response) {
-            Ok(body_str) => json_response(StatusCode::OK, body_str),
-            Err(_) => json_rpc_error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                -32603,
-                "Internal server error",
-            ),
-        },
+        Ok(result) => serialize_to_json_response(&result),
+        Err(error_response) => serialize_to_json_response(&error_response),
     }
 }
 
@@ -162,8 +143,7 @@ fn reject_oversized_request_hint(headers: &HeaderMap, max_size: u64) -> Result<(
     {
         if content_length > max_size {
             return Err(format!(
-                "Request body too large: {} bytes exceeds {} byte limit",
-                content_length, max_size
+                "Request body too large: {content_length} bytes exceeds {max_size} byte limit"
             ));
         }
     }
@@ -171,15 +151,31 @@ fn reject_oversized_request_hint(headers: &HeaderMap, max_size: u64) -> Result<(
 }
 
 /// Guaranteed size enforcement after reading the body.
-fn reject_oversized_body(body: &str, max_size: u64) -> Result<(), String> {
+pub(crate) fn reject_oversized_body(
+    context: &str,
+    body: &str,
+    max_size: u64,
+) -> Result<(), String> {
     if body.len() as u64 > max_size {
         return Err(format!(
-            "Request body too large: {} bytes exceeds {} byte limit",
+            "{} too large: {} bytes exceeds {} byte limit",
+            context,
             body.len(),
             max_size
         ));
     }
     Ok(())
+}
+
+fn serialize_to_json_response(value: &impl serde::Serialize) -> Response<Body> {
+    match serde_json::to_string(value) {
+        Ok(body_str) => json_response(StatusCode::OK, body_str),
+        Err(_) => json_rpc_error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            -32603,
+            "Internal server error",
+        ),
+    }
 }
 
 fn json_response(status: StatusCode, body: String) -> Response<Body> {

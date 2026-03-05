@@ -3,8 +3,8 @@ use crate::actions;
 use crate::config;
 use crate::types::McpServerConfig;
 use rust_mcp_schema::{
-    CallToolRequestParams, CallToolResult, ContentBlock, JsonrpcErrorResponse, JsonrpcRequest,
-    JsonrpcResponse, JsonrpcResultResponse, ListToolsResult, RequestId, RpcError,
+    CallToolRequestParams, CallToolResult, JsonrpcErrorResponse, JsonrpcRequest, JsonrpcResponse,
+    JsonrpcResultResponse, ListToolsResult, RequestId, RpcError,
 };
 use serde_json::Value;
 
@@ -22,7 +22,7 @@ pub async fn process_rpc(
         Err(e) => {
             return Err(create_error_response(
                 -32700,
-                &format!("Invalid JSON-RPC request: {}", e),
+                &format!("Invalid JSON-RPC request: {e}"),
                 None,
             ));
         }
@@ -35,7 +35,7 @@ pub async fn process_rpc(
         Err(e) => {
             return Err(create_error_response(
                 -32000,
-                &format!("Failed to load server config: {}", e),
+                &format!("Failed to load server config: {e}"),
                 id,
             ));
         }
@@ -43,7 +43,7 @@ pub async fn process_rpc(
 
     let params = match request_obj.params {
         Some(p) => Some(serde_json::to_value(p).map_err(|e| {
-            create_error_response(-32600, &format!("Invalid params: {}", e), id.clone())
+            create_error_response(-32600, &format!("Invalid params: {e}"), id.clone())
         })?),
         None => None,
     };
@@ -75,7 +75,7 @@ pub async fn process_rpc(
             Ok(resp) => Ok(resp),
             Err(e) => Err(create_error_response(
                 -32603,
-                &format!("Failed to build response: {}", e),
+                &format!("Failed to build response: {e}"),
                 None,
             )),
         },
@@ -95,8 +95,7 @@ fn handle_initialize(_headers: &Headers, server_config: &McpServerConfig) -> Res
     // NOTE: Milestone 0, without API key only public MCPs
     // check_allowed_to_list(headers, &server_config.id)?;
     let result = crate::config::build_initialize_result(server_config);
-    serde_json::to_value(result)
-        .map_err(|e| format!("Failed to serialize initialize result: {}", e))
+    serde_json::to_value(result).map_err(|e| format!("Failed to serialize initialize result: {e}"))
 }
 
 fn handle_list_tools(_headers: &Headers, server_config: &McpServerConfig) -> Result<Value, String> {
@@ -108,7 +107,7 @@ fn handle_list_tools(_headers: &Headers, server_config: &McpServerConfig) -> Res
         meta: None,
     };
 
-    serde_json::to_value(result).map_err(|e| format!("Failed to serialize tools list: {}", e))
+    serde_json::to_value(result).map_err(|e| format!("Failed to serialize tools list: {e}"))
 }
 
 async fn handle_call_tool(
@@ -119,8 +118,8 @@ async fn handle_call_tool(
     application_id: &str,
 ) -> Result<Value, String> {
     let params = params.ok_or("Missing params for tools/call")?;
-    let call_params: CallToolRequestParams = serde_json::from_value(params)
-        .map_err(|e| format!("Invalid tool call parameters: {}", e))?;
+    let call_params: CallToolRequestParams =
+        serde_json::from_value(params).map_err(|e| format!("Invalid tool call parameters: {e}"))?;
 
     let tool_with_action = server_config
         .tools
@@ -151,7 +150,7 @@ async fn handle_call_tool(
         .map(|m| Value::Object(m.clone()))
         .unwrap_or(Value::Null);
 
-    let (is_error, content): (bool, Vec<ContentBlock>) = actions::execute_mapped_action(
+    let (is_error, content) = actions::execute_mapped_action(
         &tool_with_action.action_id,
         &args_value,
         &configurations,
@@ -167,7 +166,7 @@ async fn handle_call_tool(
         meta: None,
     };
 
-    serde_json::to_value(result).map_err(|e| format!("Failed to serialize tool result: {}", e))
+    serde_json::to_value(result).map_err(|e| format!("Failed to serialize tool result: {e}"))
 }
 
 pub fn create_success_response(

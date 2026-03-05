@@ -13,7 +13,7 @@ pub async fn execute_mapped_action(
     application_id: &str,
 ) -> Result<(bool, Vec<ContentBlock>), String> {
     let input_json = serde_json::to_string(arguments)
-        .map_err(|e| format!("Failed to serialize arguments: {}", e))?;
+        .map_err(|e| format!("Failed to serialize arguments: {e}"))?;
 
     let request_body = json!({
         "action_id": action_id,
@@ -28,7 +28,7 @@ pub async fn execute_mapped_action(
     });
 
     let body_bytes = serde_json::to_vec(&request_body)
-        .map_err(|e| format!("Failed to serialize request body: {}", e))?;
+        .map_err(|e| format!("Failed to serialize request body: {e}"))?;
 
     let response_body = send_http_request(wasmcloud_host, application_id, &body_bytes).await?;
 
@@ -38,8 +38,7 @@ pub async fn execute_mapped_action(
             return Ok((
                 true,
                 vec![ContentBlock::text_content(format!(
-                    "Failed to parse action response: {}",
-                    response_body
+                    "Failed to parse action response: {response_body}"
                 ))],
             ))
         }
@@ -63,7 +62,7 @@ async fn send_http_request(
         .header("x-route-host", application_id)
         .header("content-type", "application/json")
         .body(Body::from(body_bytes.to_vec()))
-        .map_err(|e| format!("Failed to build request: {}", e))?;
+        .map_err(|e| format!("Failed to build request: {e}"))?;
 
     let timeout = Duration::from_secs(10 * 60); // 10 minutes
     let mut client = Client::new();
@@ -71,12 +70,10 @@ async fn send_http_request(
     client.set_first_byte_timeout(timeout);
     client.set_between_bytes_timeout(timeout);
 
-    let response = client.send(request).await.map_err(|e| {
-        format!(
-            "HTTP request failed (possibly timed out after 10 minutes): {}",
-            e
-        )
-    })?;
+    let response = client
+        .send(request)
+        .await
+        .map_err(|e| format!("HTTP request failed (possibly timed out after 10 minutes): {e}"))?;
 
     let status = response.status();
     let mut body = response.into_body();
@@ -86,13 +83,13 @@ async fn send_http_request(
     let response_text = body
         .str_contents()
         .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?
+        .map_err(|e| format!("Failed to read response body: {e}"))?
         .to_string();
 
-    reject_oversized_response(&response_text, MAX_ACTION_RESPONSE_SIZE)?;
+    crate::reject_oversized_body("Action response", &response_text, MAX_ACTION_RESPONSE_SIZE)?;
 
     if !status.is_success() {
-        return Err(format!("Action HTTP request failed with status {}", status));
+        return Err(format!("Action HTTP request failed with status {status}"));
     }
     Ok(response_text)
 }
@@ -102,22 +99,9 @@ fn reject_oversized_response_hint(body: &Body, max_size: u64) -> Result<(), Stri
     if let Some(content_length) = body.content_length() {
         if content_length > max_size {
             return Err(format!(
-                "Action response too large: {} bytes exceeds {} byte limit",
-                content_length, max_size
+                "Action response too large: {content_length} bytes exceeds {max_size} byte limit"
             ));
         }
-    }
-    Ok(())
-}
-
-/// Guaranteed size enforcement after reading the response body.
-fn reject_oversized_response(body: &str, max_size: u64) -> Result<(), String> {
-    if body.len() as u64 > max_size {
-        return Err(format!(
-            "Action response too large: {} bytes exceeds {} byte limit",
-            body.len(),
-            max_size
-        ));
     }
     Ok(())
 }

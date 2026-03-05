@@ -23,7 +23,7 @@ use wash_runtime::{
         http::{DevRouter, HttpServer},
         Host, HostApi, HostBuilder,
     },
-    plugin::wasi_config::DynamicConfig,
+    plugin::wasi_config::WasiConfig,
     types::{Component, LocalResources, Workload, WorkloadStartRequest},
     wit::WitInterface,
 };
@@ -152,9 +152,8 @@ fn mcp_component_config() -> HashMap<String, String> {
 }
 
 async fn start_mock_action_server() -> Result<SocketAddr> {
-    let port = find_available_port().await?;
-    let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
 
     let app = axum::Router::new().route(
         "/",
@@ -177,11 +176,11 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
     let mock_action_addr = start_mock_action_server().await?;
 
     let engine = Engine::builder().build()?;
-    let http_plugin = HttpServer::new(DevRouter::default(), addr).await?;
+    let http_plugin = HttpServer::new(DevRouter::default(), addr);
     let host = HostBuilder::new()
         .with_engine(engine)
         .with_http_handler(Arc::new(http_plugin))
-        .with_plugin(Arc::new(DynamicConfig::default()))?
+        .with_plugin(Arc::new(WasiConfig::default()))?
         .build()?
         .start()
         .await
@@ -196,9 +195,7 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
             service: None,
             components: vec![
                 Component {
-                    name: "mcp".to_string(),
                     bytes: bytes::Bytes::from_static(BETTY_MCP_COMPONENT_WASM),
-                    digest: None,
                     local_resources: LocalResources {
                         memory_limit_mb: 256,
                         cpu_limit: 1,
@@ -217,9 +214,7 @@ async fn setup() -> Result<(Arc<Host>, SocketAddr)> {
                     max_invocations: 100,
                 },
                 Component {
-                    name: "jwt-auth".to_string(),
                     bytes: bytes::Bytes::from_static(JWT_AUTH_COMPONENT_WASM),
-                    digest: None,
                     local_resources: LocalResources {
                         memory_limit_mb: 128,
                         cpu_limit: 1,
@@ -348,7 +343,7 @@ async fn test_happy_path() -> Result<()> {
     Ok(())
 }
 
-// TODO: Re-enable when JWT auth is enabled (post-Milestone 0)
+// TODO: Re-enable when JWT auth is enabled (milestone 2)
 #[ignore]
 #[tokio::test]
 async fn test_auth_failures() -> Result<()> {
