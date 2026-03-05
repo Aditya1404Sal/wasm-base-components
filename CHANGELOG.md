@@ -1,3 +1,11 @@
+## [1.5.2](https://github.com/bettyblocks/wasm-base-components/compare/v1.5.1...v1.5.2) (2026-03-05)
+
+
+### Bug Fixes
+
+* call action via http request instead of direct wasm call ([56b31aa](https://github.com/bettyblocks/wasm-base-components/commit/56b31aa0291e974b09670cecf6cf5c347cf9ceff))
+* use x-route-host header since host header is prohibited by WASI ([ea5c1d9](https://github.com/bettyblocks/wasm-base-components/commit/ea5c1d907eb09cd4174acbee7e42534aa6817189))
+
 ## [1.5.1](https://github.com/bettyblocks/wasm-base-components/compare/v1.5.0...v1.5.1) (2026-03-03)
 
 
