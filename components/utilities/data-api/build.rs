@@ -36,24 +36,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         assert!(status.success(), "WASM component build failed");
 
-        // Copy built WASM artifacts to tests/fixtures/ so include_bytes! can
-        // find them via CARGO_MANIFEST_DIR (workspace builds output to the
-        // root target/ directory, not the crate-local one).
+        // Copy built WASM artifacts to tests/fixtures/.
+        // Each crate has its own target/ directory (no workspace).
         let manifest_dir = std::path::PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        let workspace_root = manifest_dir
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .expect("Could not find workspace root");
-        let wasm_target_dir = workspace_root.join("target/wasm32-wasip2/release/deps");
+        let test_component_dir = manifest_dir.join("test-component");
         let fixtures_dir = manifest_dir.join("tests/fixtures");
         std::fs::create_dir_all(&fixtures_dir).expect("Failed to create tests/fixtures");
 
-        for (src_name, dest_name) in [
-            ("data_api_component.wasm", "data_api_component.wasm"),
-            ("test_component.wasm", "test_component.wasm"),
-        ] {
-            let src = wasm_target_dir.join(src_name);
+        let artifacts: &[(&std::path::Path, &str, &str)] = &[
+            (
+                manifest_dir.as_path(),
+                "data_api_component.wasm",
+                "data_api_component.wasm",
+            ),
+            (
+                test_component_dir.as_path(),
+                "test_component.wasm",
+                "test_component.wasm",
+            ),
+        ];
+        for (crate_dir, src_name, dest_name) in artifacts {
+            let src = crate_dir
+                .join("target/wasm32-wasip2/release/deps")
+                .join(src_name);
             let dest = fixtures_dir.join(dest_name);
             std::fs::copy(&src, &dest).unwrap_or_else(|e| {
                 panic!(

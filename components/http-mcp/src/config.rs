@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use crate::types::{McpServerConfig, McpServersConfig};
+use crate::wasi::cli::environment::get_environment;
 use crate::wasi::config::store::get;
 use rust_mcp_schema::{
     Implementation, InitializeResult, ServerCapabilities, ServerCapabilitiesTools,
@@ -6,10 +9,34 @@ use rust_mcp_schema::{
 };
 
 const WASI_CONFIG_KEY: &str = "mcp_servers";
+const WASMCLOUD_HOST_ENV: &str = "WASMCLOUD_HOST";
+const APPLICATION_ID_ENV: &str = "APPLICATION_ID";
+
+pub struct EnvConfig {
+    pub wasmcloud_host: String,
+    pub application_id: String,
+}
+
+impl EnvConfig {
+    pub fn from_env() -> Result<Self, String> {
+        let env: HashMap<String, String> = get_environment().into_iter().collect();
+
+        let get = |name: &str| -> Result<String, String> {
+            env.get(name)
+                .cloned()
+                .ok_or_else(|| format!("Environment variable '{name}' not set"))
+        };
+
+        Ok(Self {
+            wasmcloud_host: get(WASMCLOUD_HOST_ENV)?,
+            application_id: get(APPLICATION_ID_ENV)?,
+        })
+    }
+}
 
 pub fn load_server_config(server_id: &str) -> Result<McpServerConfig, String> {
     let raw = get(WASI_CONFIG_KEY)
-        .map_err(|e| format!("Failed to get wasi config: {:?}", e))?
+        .map_err(|e| format!("Failed to get wasi config: {e:?}"))?
         .ok_or_else(|| "mcp_servers key not found in runtime configuration".to_string())?;
 
     parse_server_config(&raw, server_id)
@@ -37,13 +64,13 @@ pub fn build_initialize_result(server_config: &McpServerConfig) -> InitializeRes
 
 fn parse_server_config(raw: &str, server_id: &str) -> Result<McpServerConfig, String> {
     let config: McpServersConfig = serde_json::from_str(raw)
-        .map_err(|e| format!("Failed to parse mcp_servers config: {}", e))?;
+        .map_err(|e| format!("Failed to parse mcp_servers config: {e}"))?;
 
     config
         .mcp_servers
         .into_iter()
         .find(|s| s.id == server_id)
-        .ok_or_else(|| format!("MCP server '{}' not found in configuration", server_id))
+        .ok_or_else(|| format!("MCP server '{server_id}' not found in configuration"))
 }
 
 #[cfg(test)]

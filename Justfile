@@ -16,9 +16,6 @@ build-all:
 
 build: build-all
 
-build-test:
-  wash build --config-path integration-test/components/fetcher
-
 deploy env version:
   cd deploy && bun install
   cd deploy && bun run publish {{env}} {{version}}
@@ -69,6 +66,6 @@ format-ci:
     done
 
 integration-test:
-    cd integration-test && cargo test -- --nocapture
+    cd components/http-mcp && cargo test --test integration_test_mcp -- --nocapture
 
 all: test-all lint-all clippy-all format-all

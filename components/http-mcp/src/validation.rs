@@ -11,9 +11,9 @@ pub fn validate_arguments(
         .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
     let schema_value =
-        serde_json::to_value(schema).map_err(|e| format!("Failed to serialize schema: {}", e))?;
+        serde_json::to_value(schema).map_err(|e| format!("Failed to serialize schema: {e}"))?;
 
-    let validator = validator_for(&schema_value).map_err(|e| format!("Invalid schema: {}", e))?;
+    let validator = validator_for(&schema_value).map_err(|e| format!("Invalid schema: {e}"))?;
 
     if validator.is_valid(&args_value) {
         Ok(())

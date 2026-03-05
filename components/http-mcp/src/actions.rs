@@ -1,55 +1,109 @@
-use crate::betty_blocks::actions::actions::{call, Error as ActionError, RunInput, RunPayload};
 use rust_mcp_schema::ContentBlock;
-use serde_json::Value;
+use serde_json::{json, Value};
+use wstd::http::{Body, Client, Method, Request};
+use wstd::time::Duration;
 
-pub fn execute_mapped_action(
+const MAX_ACTION_RESPONSE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+
+pub async fn execute_mapped_action(
     action_id: &str,
     arguments: &Value,
     configurations: &str,
+    wasmcloud_host: &str,
+    application_id: &str,
 ) -> Result<(bool, Vec<ContentBlock>), String> {
     let input_json = serde_json::to_string(arguments)
-        .map_err(|e| format!("Failed to serialize arguments: {}", e))?;
+        .map_err(|e| format!("Failed to serialize arguments: {e}"))?;
 
-    let run_input = RunInput {
-        action_id: action_id.to_string(),
-        payload: RunPayload {
-            input: input_json,
-            configurations: configurations.to_string(),
+    let request_body = json!({
+        "action_id": action_id,
+        "payload": {
+            "input": input_json,
+            "configurations": configurations
         },
-    };
+        // The HTTP wrapper we call does not validate or use the JWT;
+        // it is included only because the endpoint schema requires it.
+        // TODO: Should we pass through the caller's JWT instead of an empty string?
+        "jwt": ""
+    });
 
-    match call(&run_input) {
-        Ok(output) => {
-            // Response body is {"output": <any JSON value>}. If "output" key is missing -> null.
-            let data: Value = match serde_json::from_str(&output.result) {
-                Ok(v) => v,
-                Err(_) => {
-                    return Ok((
-                        true,
-                        vec![ContentBlock::text_content(format!(
-                            "Failed to parse action response: {}",
-                            output.result
-                        ))],
-                    ))
-                }
-            };
-            let output_value = data.get("output").cloned().unwrap_or(Value::Null);
-            Ok((false, parse_action_output(&output_value)))
+    let body_bytes = serde_json::to_vec(&request_body)
+        .map_err(|e| format!("Failed to serialize request body: {e}"))?;
+
+    let response_body = send_http_request(wasmcloud_host, application_id, &body_bytes).await?;
+
+    let data: Value = match serde_json::from_str(&response_body) {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok((
+                true,
+                vec![ContentBlock::text_content(format!(
+                    "Failed to parse action response: {response_body}"
+                ))],
+            ))
         }
-        Err(ActionError::RunFailed(msg)) => Ok((
-            true,
-            vec![ContentBlock::text_content(format!(
-                "Action failed: {}",
-                msg
-            ))],
-        )),
-        Err(ActionError::Forbidden) => Ok((
-            true,
-            vec![ContentBlock::text_content(
-                "Action forbidden: insufficient permissions".to_string(),
-            )],
-        )),
+    };
+    let output_value = data.get("output").cloned().unwrap_or(Value::Null);
+    Ok((false, parse_action_output(&output_value)))
+}
+
+async fn send_http_request(
+    wasmcloud_host: &str,
+    application_id: &str,
+    body_bytes: &[u8],
+) -> Result<String, String> {
+    let uri = format!("{wasmcloud_host}/");
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(&uri)
+        // NOTE: WASI prohibits to set the host header so as a workaround
+        // we set this header. The runtime-gateway then sets the host header
+        // with this value
+        .header("x-route-host", application_id)
+        .header("content-type", "application/json")
+        .body(Body::from(body_bytes.to_vec()))
+        .map_err(|e| format!("Failed to build request: {e}"))?;
+
+    let timeout = Duration::from_secs(10 * 60); // 10 minutes
+    let mut client = Client::new();
+    client.set_connect_timeout(timeout);
+    client.set_first_byte_timeout(timeout);
+    client.set_between_bytes_timeout(timeout);
+
+    let response = client
+        .send(request)
+        .await
+        .map_err(|e| format!("HTTP request failed (possibly timed out after 10 minutes): {e}"))?;
+
+    let status = response.status();
+    let mut body = response.into_body();
+
+    reject_oversized_response_hint(&body, MAX_ACTION_RESPONSE_SIZE)?;
+
+    let response_text = body
+        .str_contents()
+        .await
+        .map_err(|e| format!("Failed to read response body: {e}"))?
+        .to_string();
+
+    crate::reject_oversized_body("Action response", &response_text, MAX_ACTION_RESPONSE_SIZE)?;
+
+    if !status.is_success() {
+        return Err(format!("Action HTTP request failed with status {status}"));
     }
+    Ok(response_text)
+}
+
+/// Best-effort early rejection based on response content-length (may be absent).
+fn reject_oversized_response_hint(body: &Body, max_size: u64) -> Result<(), String> {
+    if let Some(content_length) = body.content_length() {
+        if content_length > max_size {
+            return Err(format!(
+                "Action response too large: {content_length} bytes exceeds {max_size} byte limit"
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub fn parse_action_output(output: &Value) -> Vec<ContentBlock> {
@@ -92,7 +146,6 @@ mod tests {
         assert_eq!(content.len(), 1);
         match &content[0] {
             ContentBlock::TextContent(t) => {
-                // Should be pretty-printed JSON
                 assert!(t.text.contains("key"));
                 assert!(t.text.contains("value"));
             }
