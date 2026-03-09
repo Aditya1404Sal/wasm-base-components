@@ -1,0 +1,36 @@
+package betty-blocks:file;
+
+// Low Level
+interface upload-file {
+    use betty-blocks:types/types.{model, property};
+
+    record upload-result {
+        reference: string,
+        file-size: u64,
+        message: option<string>,
+    }
+
+    upload: func(
+        model: model,
+        property: property,
+        file-bytes: list<u8>,
+        filename: string,
+        content-type: string,
+    ) -> result<upload-result, string>;
+}
+
+// High level
+interface store {
+    use betty-blocks:data-api/data-api.{helper-context};
+    use betty-blocks:types/types.{model, property};
+
+    type download-headers = option<list<tuple<string, string>>>;
+
+    record store-file-result {
+        reference: string,
+        file-size: u64,
+        message: option<string>,
+    }
+
+    store-file-call: func(helper-context: helper-context, model: model, property: property, download-url: string, download-headers: download-headers) -> result<store-file-result, string>;
+}
