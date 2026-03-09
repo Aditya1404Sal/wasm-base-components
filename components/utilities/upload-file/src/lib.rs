@@ -16,7 +16,6 @@ use crate::upload::upload_bytes_internal;
 struct Component;
 
 impl UploadFileGuest for Component {
-    
     fn upload(
         model: Model,
         property: Property,
@@ -24,8 +23,14 @@ impl UploadFileGuest for Component {
         filename: String,
         content_type: String,
     ) -> Result<UploadResult, String> {
-        wstd::runtime::block_on(upload_bytes_internal(model, property, file_bytes, filename, content_type))
-            .map_err(|e| e.to_string())
+        wstd::runtime::block_on(upload_bytes_internal(
+            model,
+            property,
+            file_bytes,
+            filename,
+            content_type,
+        ))
+        .map_err(|e| e.to_string())
     }
 }
 

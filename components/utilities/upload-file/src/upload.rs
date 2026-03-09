@@ -1,18 +1,13 @@
 use anyhow::Result;
 use multipart::client::lazy::Multipart;
-use std::io::{Cursor, Read};
+use std::io::Read;
 use tracing::{debug, error};
-use wstd::{
-    http::{body::BodyForthcoming, Client, Request},
-    io::AsyncWrite,
-};
+use wstd::http::{Body, Client, Request};
 
 use crate::bindings::{
     betty_blocks::data_api::data_api_utilities::{self, Model, PresignedPost, Property},
     exports::betty_blocks::file::upload_file::UploadResult,
 };
-
-const NETWORK_BUF_SIZE: usize = 64 * 1024; // 64kb
 
 pub async fn upload_bytes_internal(
     model: Model,
@@ -24,7 +19,7 @@ pub async fn upload_bytes_internal(
     let file_size = file_bytes.len() as u64;
 
     let presigned_post =
-        data_api_utilities::fetch_presigned_post(&model, &property, &content_type,&filename)
+        data_api_utilities::fetch_presigned_post(&model, &property, &content_type, &filename)
             .map_err(|e| {
                 error!(
                     "upload_bytes_internal: Failed to fetch presigned URL: {}",
@@ -55,13 +50,11 @@ async fn upload_to_presigned_post(
         form.add_text(field.key.clone(), field.value.clone());
     }
 
-    let cursor = Cursor::new(file_bytes);
-
     let mime: mime::Mime = content_type
         .parse()
         .unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
-    form.add_stream("file", cursor, Some(filename), Some(mime));
+    form.add_stream("file", file_bytes.as_slice(), Some(filename), Some(mime));
 
     let mut prepared = form
         .prepare()
@@ -69,44 +62,28 @@ async fn upload_to_presigned_post(
 
     let content_type_header = format!("multipart/form-data; boundary={}", prepared.boundary());
 
+    let mut body_bytes = Vec::new();
+    prepared
+        .read_to_end(&mut body_bytes)
+        .map_err(|e| anyhow::anyhow!("Failed to read multipart body: {e}"))?;
+
     let request = Request::post(&presigned_post.url)
         .header("content-type", &*content_type_header)
-        .body(BodyForthcoming)
+        .body(Body::from(body_bytes))
         .map_err(|e| anyhow::anyhow!("Failed to build upload request: {e}"))?;
 
-    let (mut outgoing_body, response_future) = client
-        .start_request(request)
+    let response = client
+        .send(request)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to start upload request: {e}"))?;
-
-    let mut buf = [0u8; NETWORK_BUF_SIZE];
-    loop {
-        let n = prepared
-            .read(&mut buf)
-            .map_err(|e| anyhow::anyhow!("Failed to read multipart body: {e}"))?;
-        if n == 0 {
-            break;
-        }
-        outgoing_body
-            .write_all(&buf[..n])
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to write to outgoing body: {e}"))?;
-    }
-
-    Client::finish(outgoing_body, None)
-        .map_err(|e| anyhow::anyhow!("Failed to finish outgoing body: {e}"))?;
-
-    let response = response_future
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get upload response: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to send upload request: {e}"))?;
 
     let status = response.status().as_u16();
     debug!("Status: {}", status);
 
     if status >= 300 {
         let mut err_body = response.into_body();
-        let err = match err_body.bytes().await {
-            Ok(b) => String::from_utf8_lossy(&b).to_string(),
+        let err = match err_body.contents().await {
+            Ok(b) => String::from_utf8_lossy(b).to_string(),
             Err(_) => String::new(),
         };
         debug!("Error body: {}", err);
