@@ -34,6 +34,7 @@ jobs:
       REPO_OWNER: ${{ github.repository_owner }}
       # Component registry — add new components here (name|build_path)
       COMPONENTS: |
+        auth-component|components/utilities/auth/build/jwt_auth_component.wasm
         crud-component|components/utilities/crud/build/crud_component.wasm
         data-api-component|components/utilities/data-api/build/data_api_component.wasm
         http-wrapper|components/http-wrapper/build/http_wrapper.wasm
