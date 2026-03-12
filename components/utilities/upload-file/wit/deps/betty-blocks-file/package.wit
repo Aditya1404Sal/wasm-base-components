@@ -1,6 +1,7 @@
 package betty-blocks:file;
 
 interface upload-file {
+  use betty-blocks:data-api/data-api.{helper-context};
   use betty-blocks:types/types.{model, property};
 
   record upload-result {
@@ -9,7 +10,7 @@ interface upload-file {
     message: option<string>,
   }
 
-  upload: func(model: model, property: property, file-bytes: list<u8>, filename: string, content-type: string) -> result<upload-result, string>;
+  upload: func(helper-context: helper-context, model: model, property: property, file-bytes: list<u8>, filename: string, content-type: string) -> result<upload-result, string>;
 }
 
 interface store {

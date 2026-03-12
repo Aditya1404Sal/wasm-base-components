@@ -1,15 +1,53 @@
 use anyhow::Result;
 use multipart::client::lazy::Multipart;
+use serde::Deserialize;
 use std::io::Read;
 use tracing::{debug, error};
 use wstd::http::{Body, Client, Request};
 
 use crate::bindings::{
-    betty_blocks::data_api::data_api_utilities::{self, Model, PresignedPost, Property},
+    betty_blocks::data_api::data_api::{self, HelperContext},
+    betty_blocks::types::types::{Model, Property},
     exports::betty_blocks::file::upload_file::UploadResult,
 };
 
+const GENERATE_FILE_UPLOAD_URL_REQUEST: &str = r#"
+mutation GenerateFileUploadRequest(
+    $modelName: String!,
+    $propertyName: String!,
+    $contentType: String!,
+    $fileName: String!
+) {
+    generateFileUploadRequest(
+        modelName: $modelName,
+        propertyName: $propertyName,
+        contentType: $contentType,
+        fileName: $fileName
+    ) {
+        ... on PresignedPostRequest {
+            reference
+            fields
+            url
+        }
+    }
+}
+"#;
+
+#[derive(Deserialize)]
+struct PolicyField {
+    key: String,
+    value: String,
+}
+
+#[derive(Deserialize)]
+struct PresignedPostRequest {
+    reference: String,
+    fields: Vec<PolicyField>,
+    url: String,
+}
+
 pub async fn upload_bytes_internal(
+    helper_context: HelperContext,
     model: Model,
     property: Property,
     file_bytes: Vec<u8>,
@@ -18,15 +56,42 @@ pub async fn upload_bytes_internal(
 ) -> Result<UploadResult> {
     let file_size = file_bytes.len() as u64;
 
-    let presigned_post =
-        data_api_utilities::fetch_presigned_post(&model, &property, &content_type, &filename)
-            .map_err(|e| {
-                error!(
-                    "upload_bytes_internal: Failed to fetch presigned URL: {}",
-                    e
-                );
-                anyhow::anyhow!("Failed to fetch presigned URL: {}", e)
-            })?;
+    let variables = serde_json::json!({
+        "modelName": model.name,
+        "propertyName": property.name,
+        "contentType": content_type,
+        "fileName": filename,
+    })
+    .to_string();
+
+    let response_str = data_api::request(
+        &helper_context,
+        GENERATE_FILE_UPLOAD_URL_REQUEST,
+        &variables,
+    )
+    .map_err(|e| {
+        error!("upload_bytes_internal: GraphQL mutation failed: {}", e);
+        anyhow::anyhow!("GraphQL mutation failed: {}", e)
+    })?;
+
+    let response: serde_json::Value = serde_json::from_str(&response_str)
+        .map_err(|e| anyhow::anyhow!("Failed to parse mutation response: {}", e))?;
+
+    if let Some(serde_json::Value::Array(errors)) = response.get("errors") {
+        let messages: Vec<String> = errors
+            .iter()
+            .filter_map(|e| Some(e.get("message")?.as_str()?.to_owned()))
+            .collect();
+        return Err(anyhow::anyhow!("GraphQL errors: {}", messages.join("; ")));
+    }
+
+    let presigned_post: PresignedPostRequest = serde_json::from_value(
+        response
+            .pointer("/data/generateFileUploadRequest")
+            .ok_or_else(|| anyhow::anyhow!("Missing data.generateFileUploadRequest in response"))?
+            .clone(),
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to parse presigned post: {}", e))?;
 
     upload_to_presigned_post(&presigned_post, file_bytes, &filename, &content_type).await?;
 
@@ -38,7 +103,7 @@ pub async fn upload_bytes_internal(
 }
 
 async fn upload_to_presigned_post(
-    presigned_post: &PresignedPost,
+    presigned_post: &PresignedPostRequest,
     file_bytes: Vec<u8>,
     filename: &str,
     content_type: &str,
