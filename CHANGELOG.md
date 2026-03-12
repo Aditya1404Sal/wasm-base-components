@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.5.2...v1.6.0) (2026-03-12)
+
+
+### Features
+
+* blank commit for semantic release ([983493c](https://github.com/bettyblocks/wasm-base-components/commit/983493c70ba623a1d0f197125ca1572cc006d008))
+
 ## [1.5.2](https://github.com/bettyblocks/wasm-base-components/compare/v1.5.1...v1.5.2) (2026-03-05)
 
 
