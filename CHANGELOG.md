@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.6.0...v1.7.0) (2026-03-12)
+
+
+### Features
+
+* add conventional commit check step to ci ([73cc502](https://github.com/bettyblocks/wasm-base-components/commit/73cc5029cb4c92a2eff09dd9f32943038b0e55bd))
+
 # [1.6.0](https://github.com/bettyblocks/wasm-base-components/compare/v1.5.2...v1.6.0) (2026-03-12)
 
 
