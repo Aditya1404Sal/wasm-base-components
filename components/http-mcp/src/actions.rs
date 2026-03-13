@@ -89,7 +89,9 @@ async fn send_http_request(
     crate::reject_oversized_body("Action response", &response_text, MAX_ACTION_RESPONSE_SIZE)?;
 
     if !status.is_success() {
-        return Err(format!("Action HTTP request failed with status {status}"));
+        return Err(format!(
+            "Action HTTP request failed with status {status}: {response_text}"
+        ));
     }
     Ok(response_text)
 }
